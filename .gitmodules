@@ -16,3 +16,6 @@
 [submodule "lib/balancer-v2-monorepo"]
 	path = lib/balancer-v2-monorepo
 	url = https://github.com/balancer/balancer-v2-monorepo
+[submodule "lib/v2-core"]
+	path = lib/v2-core
+	url = https://github.com/uniswap/v2-core
