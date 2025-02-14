@@ -13,10 +13,11 @@ import { IPermit2 } from "@uniswap/permit2/src/interfaces/IPermit2.sol";
 import { StateLibrary } from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import { PoolKey } from "@uniswap/v4-core/src/types/PoolKey.sol";
 import { ISwapRouter } from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
+import { Commands } from "@uniswap/universal-router/contracts/libraries/Commands.sol";
 // import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 // already imported by balancer contracts
 
-contract Arbitrage is IFlashLoanRecipient {
+abstract contract Arbitrage is IFlashLoanRecipient {
     using StateLibrary for IPoolManager;
 
     UniversalRouter public immutable router;
@@ -26,7 +27,7 @@ contract Arbitrage is IFlashLoanRecipient {
     IVault private constant vault = IVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
 
     ISwapRouter public immutable sRouter;
-    ISwapRouter public immutable uRouter;
+    UniversalRouter public immutable uRouter;
     address public owner;
     uint24 public constant feeTier = 3000;
 
@@ -40,7 +41,7 @@ contract Arbitrage is IFlashLoanRecipient {
         permit2.approve(token, address(router), amount, expiration);
     }
 
-    constructor(address _sRouter, address _router, address _poolManager, address _permit2) {
+    constructor(address _sRouter, UniversalRouter _router, address _poolManager, address _permit2) {
         sRouter = ISwapRouter(_sRouter); // Sushiswap
         uRouter = UniversalRouter(_router); // Uniswap
         poolManager = IPoolManager(_poolManager);
@@ -71,13 +72,12 @@ contract Arbitrage is IFlashLoanRecipient {
     function receiveFlashLoan(
         PoolKey calldata key,
         IERC20[] memory tokens,
-        uint256[] memory amounts,
-        uint256[] memory feeAmounts,
+        uint160[] memory amounts,
         bytes memory userData
-    ) external override {
+    ) external {
         require(msg.sender == address(vault));
 
-        uint256 flashAmount = amounts[0];
+        uint160 flashAmount = amounts[0];
 
         (bool startOnUniswap, address token0, address token1) = abi.decode(
             userData,
@@ -96,14 +96,14 @@ contract Arbitrage is IFlashLoanRecipient {
             path[0] = token1;
             path[1] = token0;
 
-            _swapOnSushiswap(path, IERC20(token1).balanceOf(address(this)), flashAmount, 281474976710655);
+            _swapOnSushiswap(path, uint160(IERC20(token1).balanceOf(address(this))), flashAmount, 281474976710655);
         } else {
             _swapOnSushiswap(path, flashAmount, 0, 281474976710655);
 
             path[0] = token1;
             path[1] = token0;
 
-            _swapOnUniswap(key, path, IERC20(token1).balanceOf(address(this)), flashAmount, 281474976710655);
+            _swapOnUniswap(key, path, uint160(IERC20(token1).balanceOf(address(this))), flashAmount, 281474976710655);
         }
 
         IERC20(token0).transfer(address(vault), flashAmount);
@@ -114,12 +114,12 @@ contract Arbitrage is IFlashLoanRecipient {
     // -- INTERNAL FUNCTIONS -- //
 
     function _swapOnUniswap(
-        address[] memory _path,
         PoolKey calldata key,
-        uint256 _amountIn,
+        address[] memory _path,
+        uint160 _amountIn,
         uint256 _amountOut,
         uint48 expiration
-    ) internal {
+    ) internal returns (uint256 amountOut) {
         approveTokenWithPermit2(_path[0], _amountIn, expiration, address(uRouter));
 
         uint160 priceLimit = 0;
@@ -164,10 +164,10 @@ contract Arbitrage is IFlashLoanRecipient {
 
     function _swapOnSushiswap(
         address[] memory _path,
-        uint256 _amountIn,
+        uint160 _amountIn,
         uint256 _amountOut,
         uint48 expiration
-    ) internal {
+    ) internal returns (uint256 amountOut) {
         approveTokenWithPermit2(_path[0], _amountIn, expiration, address(sRouter));
 
         uint160 priceLimit = 0;
