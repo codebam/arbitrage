@@ -12,6 +12,7 @@ import { Actions } from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import { IPermit2 } from "@uniswap/permit2/src/interfaces/IPermit2.sol";
 import { StateLibrary } from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import { PoolKey } from "@uniswap/v4-core/src/types/PoolKey.sol";
+import { ISwapRouter } from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 // import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract Arbitrage is IFlashLoanRecipient {
@@ -49,6 +50,8 @@ contract Arbitrage is IFlashLoanRecipient {
     function executeTrade(
         PoolKey calldata key,
         bool _startOnUniswap,
+        address _token0,
+        address _token1,
         uint256 _flashAmount
     ) external {
         bytes memory data = abi.encode(_startOnUniswap, _token0, _token1);
