@@ -7,10 +7,10 @@ import "@balancer-labs/v2-interfaces/contracts/vault/IFlashLoanRecipient.sol";
 // Uniswap V4 contracts
 import { UniversalRouter } from "@uniswap/universal-router/contracts/UniversalRouter.sol";
 import { Commands } from "@uniswap/universal-router/contracts/libraries/Commands.sol";
-import { IPoolManager } from "@uniswap/v4-core/contracts/interfaces/IPoolManager.sol";
-import { IV4Router } from "@uniswap/v4-periphery/contracts/interfaces/IV4Router.sol";
-import { Actions } from "@uniswap/v4-periphery/contracts/libraries/Actions.sol";
-import { IPermit2 } from "@uniswap/permit2/contracts/interfaces/IPermit2.sol";
+import { IPoolManager } from "@uniswap/v4-core/src/interfaces/IPoolManager.sol";
+import { IV4Router } from "@uniswap/v4-periphery/src/interfaces/IV4Router.sol";
+import { Actions } from "@uniswap/v4-periphery/src/libraries/Actions.sol";
+import { IPermit2 } from "@uniswap/permit2/src/interfaces/IPermit2.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract Arbitrage is IFlashLoanRecipient {
@@ -39,7 +39,7 @@ contract Arbitrage is IFlashLoanRecipient {
         address token,
         uint160 amount,
         uint48 expiration,
-        address router,
+        address router
     ) external {
         IERC20(token).approve(address(permit2), type(uint256).max);
         permit2.approve(token, address(router), amount, expiration);
