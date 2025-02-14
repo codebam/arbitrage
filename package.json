@@ -1,0 +1,5 @@
+{
+  "dependencies": {
+    "@balancer-labs/v2-interfaces": "^0.4.0"
+  }
+}
