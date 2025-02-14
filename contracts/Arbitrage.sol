@@ -14,6 +14,7 @@ import { StateLibrary } from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import { PoolKey } from "@uniswap/v4-core/src/types/PoolKey.sol";
 import { ISwapRouter } from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 // import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+// already imported by balancer contracts
 
 contract Arbitrage is IFlashLoanRecipient {
     using StateLibrary for IPoolManager;
@@ -29,22 +30,22 @@ contract Arbitrage is IFlashLoanRecipient {
     address public owner;
     uint24 public constant feeTier = 3000;
 
+    function approveTokenWithPermit2(
+        address token,
+        uint160 amount,
+        uint48 expiration,
+        address _router
+    ) public {
+        IERC20(token).approve(address(permit2), type(uint256).max);
+        permit2.approve(token, address(router), amount, expiration);
+    }
+
     constructor(address _sRouter, address _router, address _poolManager, address _permit2) {
         sRouter = ISwapRouter(_sRouter); // Sushiswap
         uRouter = UniversalRouter(_router); // Uniswap
         poolManager = IPoolManager(_poolManager);
         permit2 = IPermit2(_permit2);
         owner = msg.sender;
-    }
-
-    function approveTokenWithPermit2(
-        address token,
-        uint160 amount,
-        uint48 expiration,
-        address _router
-    ) external {
-        IERC20(token).approve(address(permit2), type(uint256).max);
-        permit2.approve(token, address(router), amount, expiration);
     }
 
     function executeTrade(
@@ -140,14 +141,14 @@ contract Arbitrage is IFlashLoanRecipient {
             IV4Router.ExactInputSingleParams({
                 poolKey: key,
                 zeroForOne: true,
-                amountIn: amountIn,
-                amountOutMinimum: minAmountOut,
+                amountIn: _amountIn,
+                amountOutMinimum: _amountOut,
                 sqrtPriceLimitX96: uint160(0),
                 hookData: bytes("")
             })
         );
-        params[1] = abi.encode(key.currency0, amountIn);
-        params[2] = abi.encode(key.currency1, minAmountOut);
+        params[1] = abi.encode(key.currency0, _amountIn);
+        params[2] = abi.encode(key.currency1, _amountOut);
 
         // Combine actions and params into inputs
         inputs[0] = abi.encode(actions, params);
@@ -157,7 +158,7 @@ contract Arbitrage is IFlashLoanRecipient {
 
         // Verify and return the output amount
         amountOut = IERC20(key.currency1).balanceOf(address(this));
-        require(amountOut >= minAmountOut, "Insufficient output amount");
+        require(amountOut >= _amountOut, "Insufficient output amount");
         return amountOut;
     }
 
