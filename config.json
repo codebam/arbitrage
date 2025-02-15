@@ -1,0 +1,15 @@
+{
+    "PROJECT_SETTINGS": {
+        "isLocal": false,
+        "isDeployed": false,
+        "ARBITRAGE_ADDRESS": "0xBf7068c81913090d27Ef8cf5D25d8Bb99275deA6"
+    },
+    "UNISWAPV4": {
+        "UNIVERSAL_ROUTER_V2": "0xa51afafe0263b40edaef0df8781ea9aa03e381a3"
+    },
+    "PANCAKESWAPV3": {
+        "V3_ROUTER_ADDRESS": "0x1b81D678ffb9C0263b24A97847620C99d213eB14",
+        "FACTORY_ADDRESS": "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865"
+    }
+}
+
