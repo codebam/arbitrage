@@ -2,7 +2,6 @@
 @uniswap/v4-periphery/=lib/v4-periphery/
 @uniswap/permit2/=lib/permit2/
 @uniswap/universal-router/=lib/universal-router/
-@openzeppelin/contracts/token/ERC721/=lib/openzeppelin-contracts/contracts/interfaces/
 @openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
 @uniswap/v3-core/=lib/v3-core/
 @uniswap/v3-periphery/=lib/v3-periphery/
