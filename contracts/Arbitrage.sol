@@ -50,12 +50,7 @@ contract Arbitrage {
         permit2.approve(token, address(_router), amount, expiration);
     }
 
-    modifier onlyOwner() {
-        require(msg.sender == owner, "Not owner");
-        _;
-    }
-
-    function executeFlashLoan(uint256 amount, address token0, address token1, bool startOnUniswap, PoolKey memory key) external onlyOwner {
+    function executeFlashLoan(uint256 amount, address token0, address token1, bool startOnUniswap, PoolKey memory key) external {
         // Prepare calldata for the vault callback
         bytes memory userData = abi.encode(amount, token0, token1, startOnUniswap, key);
         balancerVault.unlock(abi.encodeWithSelector(this.receiveFlashLoan.selector, userData));
