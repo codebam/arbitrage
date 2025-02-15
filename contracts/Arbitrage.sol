@@ -104,8 +104,6 @@ contract Arbitrage {
     ) internal returns (uint256 amountOut) {
         approveTokenWithPermit2(_path[0], _amountIn, expiration, address(uRouter));
 
-        uint160 priceLimit = 0;
-
         // Encode the Universal Router command
         bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
         bytes[] memory inputs = new bytes[](1);
@@ -123,9 +121,8 @@ contract Arbitrage {
             IV4Router.ExactInputSingleParams({
                 poolKey: key,
                 zeroForOne: true,
-                amountIn: _amountIn,
-                amountOutMinimum: _amountOut,
-                sqrtPriceLimitX96: uint160(0),
+                amountIn: uint128(_amountIn),
+                amountOutMinimum: uint128(_amountOut),
                 hookData: bytes("")
             })
         );
@@ -139,7 +136,7 @@ contract Arbitrage {
         router.execute(commands, inputs, block.timestamp);
 
         // Verify and return the output amount
-        amountOut = IERC20(key.currency1).balanceOf(address(this));
+        amountOut = IERC20(address(uint160(key.currency1.toId()))).balanceOf(address(this));
         require(amountOut >= _amountOut, "Insufficient output amount");
         return amountOut;
     }
