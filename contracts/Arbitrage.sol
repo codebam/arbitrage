@@ -25,7 +25,6 @@ contract Arbitrage {
     UniversalRouter public immutable uRouter;
     UniversalRouter  public immutable pRouter;
     address public owner;
-    uint24 public constant feeTier = 3000;
 
     function approveTokenWithPermit2(
         address token,
@@ -96,7 +95,7 @@ contract Arbitrage {
     }
 
     function _Swap(
-        PoolKey calldata key,
+        PoolKey memory key,
         address[] memory _path,
         uint160 _amountIn,
         uint256 _amountOut,
