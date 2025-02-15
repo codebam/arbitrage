@@ -9,7 +9,6 @@
     {
       devShell = pkgs.mkShell {
         buildInputs = with pkgs; [
-            solc
             foundry
             nodejs
         ];
