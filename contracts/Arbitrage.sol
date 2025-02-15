@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity 0.8.28;
 
-import "@balancer-labs/v2-interfaces/contracts/vault/IVault.sol";
-import "@balancer-labs/v2-interfaces/contracts/vault/IFlashLoanRecipient.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+
+import { IVaultMain } from "@balancer-labs/v3-interfaces/contracts/vault/IVaultMain.sol";
 
 import { UniversalRouter } from "@uniswap/universal-router/contracts/UniversalRouter.sol";
 import { Commands } from "@uniswap/universal-router/contracts/libraries/Commands.sol";
@@ -12,22 +13,17 @@ import { Actions } from "@uniswap/v4-periphery/src/libraries/Actions.sol";
 import { IPermit2 } from "@uniswap/permit2/src/interfaces/IPermit2.sol";
 import { StateLibrary } from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import { PoolKey } from "@uniswap/v4-core/src/types/PoolKey.sol";
-import { ISwapRouter } from "@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol";
 import { Commands } from "@uniswap/universal-router/contracts/libraries/Commands.sol";
-// import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-// already imported by balancer contracts
 
-abstract contract Arbitrage is IFlashLoanRecipient {
+contract Arbitrage {
     using StateLibrary for IPoolManager;
 
-    UniversalRouter public immutable router;
     IPoolManager public immutable poolManager;
     IPermit2 public immutable permit2;
+    IVaultMain public immutable balancerVault;
 
-    IVault private constant vault = IVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
-
-    ISwapRouter public immutable sRouter;
     UniversalRouter public immutable uRouter;
+    UniversalRouter  public immutable pRouter;
     address public owner;
     uint24 public constant feeTier = 3000;
 
@@ -38,87 +34,74 @@ abstract contract Arbitrage is IFlashLoanRecipient {
         address _router
     ) public {
         IERC20(token).approve(address(permit2), type(uint256).max);
-        permit2.approve(token, address(router), amount, expiration);
+        permit2.approve(token, address(_router), amount, expiration);
     }
 
-    constructor(address _sRouter, UniversalRouter _router, address _poolManager, address _permit2) {
-        sRouter = ISwapRouter(_sRouter); // Sushiswap
-        uRouter = UniversalRouter(_router); // Uniswap
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Not owner");
+        _;
+    }
+
+    constructor(UniversalRouter _pRouter, UniversalRouter _uRouter, address _poolManager, address _permit2, address _balancerVault) {
+        uRouter = UniversalRouter(_uRouter);
+        pRouter = UniversalRouter(_pRouter);
         poolManager = IPoolManager(_poolManager);
         permit2 = IPermit2(_permit2);
+        balancerVault = IVaultMain(_balancerVault);
         owner = msg.sender;
     }
 
-    function executeTrade(
-        PoolKey calldata key,
-        bool _startOnUniswap,
-        address _token0,
-        address _token1,
-        uint256 _flashAmount
-    ) external {
-        bytes memory data = abi.encode(_startOnUniswap, _token0, _token1);
-
-        // Token to flash loan, by default we are flash loaning 1 token.
-        IERC20[] memory tokens = new IERC20[](1);
-        tokens[0] = IERC20(_token0);
-
-        // Flash loan amount.
-        uint256[] memory amounts = new uint256[](1);
-        amounts[0] = _flashAmount;
-
-        vault.flashLoan(this, tokens, amounts, data);
+    function executeFlashLoan(uint256 amount, address token0, address token1, bool startOnUniswap, PoolKey memory key) external onlyOwner {
+        // Prepare calldata for the vault callback
+        bytes memory userData = abi.encode(amount, token0, token1, startOnUniswap, key);
+        balancerVault.unlock(abi.encodeWithSelector(this.receiveFlashLoan.selector, userData));
     }
 
-    function receiveFlashLoan(
-        PoolKey calldata key,
-        IERC20[] memory tokens,
-        uint160[] memory amounts,
-        bytes memory userData
-    ) external {
-        require(msg.sender == address(vault));
+    function receiveFlashLoan(bytes memory userData) external {
+        require(msg.sender == address(balancerVault), "Unauthorized callback");
 
-        uint160 flashAmount = amounts[0];
+        // Decode flash loan amount
+        (uint256 amount, address token0, address token1, bool startOnUniswap, PoolKey memory key) = abi.decode(userData, (uint256, address, address, bool, PoolKey));
 
-        (bool startOnUniswap, address token0, address token1) = abi.decode(
-            userData,
-            (bool, address, address)
-        );
+        // Send some tokens from the vault to this contract (taking a flash loan)
+        balancerVault.sendTo(IERC20(token0), address(this), amount);
 
-        // Use the money here!
+        // Execute any logic with the borrowed funds (e.g., arbitrage, liquidation, etc.)
         address[] memory path = new address[](2);
 
         path[0] = token0;
         path[1] = token1;
 
         if (startOnUniswap) {
-            _swapOnUniswap(key, path, flashAmount, 0, 281474976710655);
+            _Swap(key, path, uint160(amount), 0, 281474976710655, uRouter);
 
             path[0] = token1;
             path[1] = token0;
 
-            _swapOnSushiswap(path, uint160(IERC20(token1).balanceOf(address(this))), flashAmount, 281474976710655);
+            _Swap(key, path, uint160(IERC20(token1).balanceOf(address(this))), amount, 281474976710655, pRouter);
         } else {
-            _swapOnSushiswap(path, flashAmount, 0, 281474976710655);
+            _Swap(key, path, uint160(amount), 0, 281474976710655, pRouter);
 
             path[0] = token1;
             path[1] = token0;
 
-            _swapOnUniswap(key, path, uint160(IERC20(token1).balanceOf(address(this))), flashAmount, 281474976710655);
+            _Swap(key, path, uint160(IERC20(token1).balanceOf(address(this))), amount, 281474976710655, uRouter);
         }
 
-        IERC20(token0).transfer(address(vault), flashAmount);
+        // Repay the loan
+        IERC20(token0).transfer(address(balancerVault), amount);
 
-        IERC20(token0).transfer(owner, IERC20(token0).balanceOf(address(this)));
+        // Settle the repayment
+        balancerVault.settle(IERC20(token0), amount);
     }
 
-    // -- INTERNAL FUNCTIONS -- //
-
-    function _swapOnUniswap(
+    function _Swap(
         PoolKey calldata key,
         address[] memory _path,
         uint160 _amountIn,
         uint256 _amountOut,
-        uint48 expiration
+        uint48 expiration,
+        UniversalRouter router
     ) internal returns (uint256 amountOut) {
         approveTokenWithPermit2(_path[0], _amountIn, expiration, address(uRouter));
 
@@ -159,31 +142,6 @@ abstract contract Arbitrage is IFlashLoanRecipient {
         // Verify and return the output amount
         amountOut = IERC20(key.currency1).balanceOf(address(this));
         require(amountOut >= _amountOut, "Insufficient output amount");
-        return amountOut;
-    }
-
-    function _swapOnSushiswap(
-        address[] memory _path,
-        uint160 _amountIn,
-        uint256 _amountOut,
-        uint48 expiration
-    ) internal returns (uint256 amountOut) {
-        approveTokenWithPermit2(_path[0], _amountIn, expiration, address(sRouter));
-
-        uint160 priceLimit = 0;
-
-        ISwapRouter.ExactInputSingleParams memory params =
-         ISwapRouter.ExactInputSingleParams({
-            tokenIn: _path[0],
-            tokenOut: _path[1],
-            fee: feeTier,
-            recipient: address(this),
-            deadline: (block.timestamp + 1200),
-            amountIn: _amountIn,
-            amountOutMinimum: _amountOut,
-            sqrtPriceLimitX96: priceLimit
-        });
-        amountOut = sRouter.exactInputSingle(params);
         return amountOut;
     }
 }
