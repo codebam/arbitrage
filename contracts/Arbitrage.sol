@@ -15,6 +15,9 @@ import { StateLibrary } from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import { PoolKey } from "@uniswap/v4-core/src/types/PoolKey.sol";
 import { Commands } from "@uniswap/universal-router/contracts/libraries/Commands.sol";
 
+import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
+import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
+
 contract Arbitrage {
     using StateLibrary for IPoolManager;
 
@@ -23,8 +26,19 @@ contract Arbitrage {
     IVaultMain public immutable balancerVault;
 
     UniversalRouter public immutable uRouter;
-    UniversalRouter  public immutable pRouter;
+    ISwapRouter public immutable pRouter;
     address public owner;
+
+    uint24 public constant poolFee = 3000;
+
+    constructor(ISwapRouter _pRouter, UniversalRouter _uRouter, address _poolManager, address _permit2, address _balancerVault) {
+        uRouter = UniversalRouter(_uRouter);
+        pRouter = _pRouter;
+        poolManager = IPoolManager(_poolManager);
+        permit2 = IPermit2(_permit2);
+        balancerVault = IVaultMain(_balancerVault);
+        owner = msg.sender;
+    }
 
     function approveTokenWithPermit2(
         address token,
@@ -39,15 +53,6 @@ contract Arbitrage {
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
         _;
-    }
-
-    constructor(UniversalRouter _pRouter, UniversalRouter _uRouter, address _poolManager, address _permit2, address _balancerVault) {
-        uRouter = UniversalRouter(_uRouter);
-        pRouter = UniversalRouter(_pRouter);
-        poolManager = IPoolManager(_poolManager);
-        permit2 = IPermit2(_permit2);
-        balancerVault = IVaultMain(_balancerVault);
-        owner = msg.sender;
     }
 
     function executeFlashLoan(uint256 amount, address token0, address token1, bool startOnUniswap, PoolKey memory key) external onlyOwner {
@@ -72,19 +77,19 @@ contract Arbitrage {
         path[1] = token1;
 
         if (startOnUniswap) {
-            _Swap(key, path, uint160(amount), 0, 281474976710655, uRouter);
+            _Uniswap(key, path, uint160(amount), 0, 281474976710655, uRouter);
 
             path[0] = token1;
             path[1] = token0;
 
-            _Swap(key, path, uint160(IERC20(token1).balanceOf(address(this))), amount, 281474976710655, pRouter);
+            _Pancakeswap(token0, token1, uint160(IERC20(token1).balanceOf(address(this))), pRouter);
         } else {
-            _Swap(key, path, uint160(amount), 0, 281474976710655, pRouter);
+            _Pancakeswap(token0, token1, uint160(amount), pRouter);
 
             path[0] = token1;
             path[1] = token0;
 
-            _Swap(key, path, uint160(IERC20(token1).balanceOf(address(this))), amount, 281474976710655, uRouter);
+            _Uniswap(key, path, uint160(IERC20(token1).balanceOf(address(this))), amount, 281474976710655, uRouter);
         }
 
         // Repay the loan
@@ -94,7 +99,30 @@ contract Arbitrage {
         balancerVault.settle(IERC20(token0), amount);
     }
 
-    function _Swap(
+    function _Pancakeswap(
+        address token0,
+        address token1,
+        uint160 _amountIn,
+        ISwapRouter router
+    ) internal returns (uint256 amountOut) {
+        TransferHelper.safeTransferFrom(token1, msg.sender, address(this), _amountIn);
+        TransferHelper.safeApprove(token1, address(router), _amountIn);
+        ISwapRouter.ExactInputSingleParams memory params =
+            ISwapRouter.ExactInputSingleParams({
+                tokenIn: token0,
+                tokenOut: token1,
+                fee: poolFee,
+                recipient: msg.sender,
+                deadline: block.timestamp,
+                amountIn: _amountIn,
+                amountOutMinimum: 0,
+                sqrtPriceLimitX96: 0
+            });
+
+        amountOut = router.exactInputSingle(params);
+    }
+
+    function _Uniswap(
         PoolKey memory key,
         address[] memory _path,
         uint160 _amountIn,
@@ -102,7 +130,7 @@ contract Arbitrage {
         uint48 expiration,
         UniversalRouter router
     ) internal returns (uint256 amountOut) {
-        approveTokenWithPermit2(_path[0], _amountIn, expiration, address(uRouter));
+        approveTokenWithPermit2(_path[0], _amountIn, expiration, address(router));
 
         // Encode the Universal Router command
         bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
