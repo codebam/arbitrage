@@ -11,7 +11,7 @@ const alchemy = new Alchemy({
     network: Network.ARB_MAINNET,
 });
 
-const WETH_ADDR = "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2";
+const WETH_ADDR = "0x82af49447d8a07e3bd95bd0d56f35241523fbab1";
 const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const ETH = new NativeCurrency(ChainId.ARBITRUM_ONE, 18);
 const USDC = new Token(ChainId.ARBITRUM_ONE, USDC_ADDR, 6);
