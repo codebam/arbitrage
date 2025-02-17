@@ -11,6 +11,12 @@
         buildInputs = with pkgs; [
             foundry
             nodejs
+            efm-langserver
+            nil
+            nodePackages.typescript-language-server
+            nodePackages.prettier
+            vscode-langservers-extracted
+            nodePackages.bash-language-server
         ];
       };
     }

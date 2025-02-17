@@ -1,12 +1,13 @@
 {
+  "type": "module",
   "dependencies": {
     "@balancer-labs/v2-interfaces": "^0.4.0",
     "@openzeppelin/contracts": "^5.2.0",
+    "@uniswap/sdk-core": "^7.5.0",
     "@uniswap/v3-periphery": "^1.4.4",
     "@uniswap/v4-sdk": "^1.19.4",
     "alchemy-sdk": "^3.5.3",
     "dotenv": "^16.4.7",
-    "ethers": "^6.13.5",
-    "hardhat": "^2.22.18"
+    "ethers": "^5.0.0"
   }
 }
