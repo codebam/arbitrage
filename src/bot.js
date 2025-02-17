@@ -6,7 +6,10 @@ import {
   getContract,
   encodeAbiParameters,
   parseUnits,
+  custom,
+  createWalletClient,
 } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
 import { ethers } from "ethers";
 
@@ -220,15 +223,13 @@ const stateView = getContract({
   client,
 });
 
-const WETH_ADDR = "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"; // WETH address
-const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"; // USDC address
-const ETH = new NativeCurrency(ChainId.ARBITRUM_ONE, 18);
-const USDC = new Token(ChainId.ARBITRUM_ONE, USDC_ADDR, 6);
+const WETH_ADDR = "0x82af49447d8a07e3bd95bd0d56f35241523fbab1";
+const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 
 const POOL_ID =
   "0x864abca0a6202dba5b8868772308da953ff125b0f95015adbf89aaf579e903a8";
-console.log("Pool ID:", POOL_ID);
 
+// Call this to get the ETH price on Uniswap
 async function getPoolPrice() {
   const [sqrtPriceX96, tick, protocolFee, lpFee] =
     await stateView.read.getSlot0([POOL_ID]);
@@ -927,318 +928,795 @@ const poolContract = getContract({
   client,
 });
 
+// Call this to get the ETH price on Pancakeswap
 async function pancakeGetPrice() {
   const [sqrtPriceX96] = await poolContract.read.slot0();
   const price = (Number(sqrtPriceX96) ** 2 / 2 ** 192) * 10 ** 12;
   return price;
 }
 
-// Trade.bestTradeExactIn([
-//     new Pool("0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"),
-// ]);
+const ARBITRAGE_CONTRACT_ADDR = "0xbf7068c81913090d27ef8cf5d25d8bb99275dea6";
+const ARBITRAGE_CONTRACT_ABI = [
+  {
+    inputs: [
+      {
+        internalType: "contract ISwapRouter",
+        name: "_pRouter",
+        type: "address",
+      },
+      {
+        internalType: "contract UniversalRouter",
+        name: "_uRouter",
+        type: "address",
+      },
+      { internalType: "address", name: "_poolManager", type: "address" },
+      { internalType: "address", name: "_permit2", type: "address" },
+      { internalType: "address", name: "_balancerVault", type: "address" },
+    ],
+    stateMutability: "nonpayable",
+    type: "constructor",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "token", type: "address" },
+      { internalType: "uint160", name: "amount", type: "uint160" },
+      { internalType: "uint48", name: "expiration", type: "uint48" },
+      { internalType: "address", name: "_router", type: "address" },
+    ],
+    name: "approveTokenWithPermit2",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "balancerVault",
+    outputs: [
+      { internalType: "contract IVaultMain", name: "", type: "address" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "uint256", name: "amount", type: "uint256" },
+      { internalType: "address", name: "token0", type: "address" },
+      { internalType: "address", name: "token1", type: "address" },
+      { internalType: "bool", name: "startOnUniswap", type: "bool" },
+      {
+        components: [
+          { internalType: "Currency", name: "currency0", type: "address" },
+          { internalType: "Currency", name: "currency1", type: "address" },
+          { internalType: "uint24", name: "fee", type: "uint24" },
+          { internalType: "int24", name: "tickSpacing", type: "int24" },
+          { internalType: "contract IHooks", name: "hooks", type: "address" },
+        ],
+        internalType: "struct PoolKey",
+        name: "key",
+        type: "tuple",
+      },
+    ],
+    name: "executeFlashLoan",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "owner",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "pRouter",
+    outputs: [
+      { internalType: "contract ISwapRouter", name: "", type: "address" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "permit2",
+    outputs: [{ internalType: "contract IPermit2", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "poolFee",
+    outputs: [{ internalType: "uint24", name: "", type: "uint24" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "poolManager",
+    outputs: [
+      { internalType: "contract IPoolManager", name: "", type: "address" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "bytes", name: "userData", type: "bytes" }],
+    name: "receiveFlashLoan",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "uRouter",
+    outputs: [
+      { internalType: "contract UniversalRouter", name: "", type: "address" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+];
 
-// let uPair,
-//   pPair,
-//   amount,
-//   uRate,
-//   pRate,
-//   price,
-//   uPrice,
-//   pPrice,
-//   attempts = 0,
-//   success = 0;
-// let isExecuting = false;
+const arbitrageContract = getContract({
+  address: ARBITRAGE_CONTRACT_ADDR,
+  abi: ARBITRAGE_CONTRACT_ABI,
+  client,
+});
 
-// const uniswap = new Trade();
+const walletClient = createWalletClient({
+  chain: arbitrum,
+  transport: http(),
+});
 
-// -- .ENV VALUES HERE -- //
-// const arbFor = process.env.ARB_FOR; // This is the address of token we are attempting to arbitrage (WETH)
-// const arbAgainst = process.env.ARB_AGAINST; // token1 address
-// const units = process.env.UNITS; // Used for price display/reporting
-// const difference = process.env.PRICE_DIFFERENCE;
-// const gasLimit = 1600000; // process.env.GAS_LIMIT
-// const gasPrice = process.env.GAS_PRICE; // Estimated Gas: 0.008453220000006144 ETH + ~10%
+const POSITION_MANAGER_ADDR = "0xd88f38f930b7952f2db2432cb002e7abbf3dd869";
+const POSITION_MANAGER_ABI = [
+  {
+    inputs: [
+      {
+        internalType: "contract IPoolManager",
+        name: "_poolManager",
+        type: "address",
+      },
+      {
+        internalType: "contract IAllowanceTransfer",
+        name: "_permit2",
+        type: "address",
+      },
+      {
+        internalType: "uint256",
+        name: "_unsubscribeGasLimit",
+        type: "uint256",
+      },
+      {
+        internalType: "contract IPositionDescriptor",
+        name: "_tokenDescriptor",
+        type: "address",
+      },
+      { internalType: "contract IWETH9", name: "_weth9", type: "address" },
+    ],
+    stateMutability: "nonpayable",
+    type: "constructor",
+  },
+  {
+    inputs: [
+      { internalType: "uint256", name: "tokenId", type: "uint256" },
+      { internalType: "address", name: "subscriber", type: "address" },
+    ],
+    name: "AlreadySubscribed",
+    type: "error",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "subscriber", type: "address" },
+      { internalType: "bytes", name: "reason", type: "bytes" },
+    ],
+    name: "BurnNotificationReverted",
+    type: "error",
+  },
+  { inputs: [], name: "ContractLocked", type: "error" },
+  {
+    inputs: [{ internalType: "uint256", name: "deadline", type: "uint256" }],
+    name: "DeadlinePassed",
+    type: "error",
+  },
+  {
+    inputs: [{ internalType: "Currency", name: "currency", type: "address" }],
+    name: "DeltaNotNegative",
+    type: "error",
+  },
+  {
+    inputs: [{ internalType: "Currency", name: "currency", type: "address" }],
+    name: "DeltaNotPositive",
+    type: "error",
+  },
+  { inputs: [], name: "GasLimitTooLow", type: "error" },
+  { inputs: [], name: "InputLengthMismatch", type: "error" },
+  { inputs: [], name: "InsufficientBalance", type: "error" },
+  { inputs: [], name: "InvalidContractSignature", type: "error" },
+  { inputs: [], name: "InvalidEthSender", type: "error" },
+  { inputs: [], name: "InvalidSignature", type: "error" },
+  { inputs: [], name: "InvalidSignatureLength", type: "error" },
+  { inputs: [], name: "InvalidSigner", type: "error" },
+  {
+    inputs: [
+      { internalType: "uint128", name: "maximumAmount", type: "uint128" },
+      { internalType: "uint128", name: "amountRequested", type: "uint128" },
+    ],
+    name: "MaximumAmountExceeded",
+    type: "error",
+  },
+  {
+    inputs: [
+      { internalType: "uint128", name: "minimumAmount", type: "uint128" },
+      { internalType: "uint128", name: "amountReceived", type: "uint128" },
+    ],
+    name: "MinimumAmountInsufficient",
+    type: "error",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "subscriber", type: "address" },
+      { internalType: "bytes", name: "reason", type: "bytes" },
+    ],
+    name: "ModifyLiquidityNotificationReverted",
+    type: "error",
+  },
+  { inputs: [], name: "NoCodeSubscriber", type: "error" },
+  { inputs: [], name: "NoSelfPermit", type: "error" },
+  { inputs: [], name: "NonceAlreadyUsed", type: "error" },
+  {
+    inputs: [{ internalType: "address", name: "caller", type: "address" }],
+    name: "NotApproved",
+    type: "error",
+  },
+  { inputs: [], name: "NotPoolManager", type: "error" },
+  { inputs: [], name: "NotSubscribed", type: "error" },
+  { inputs: [], name: "PoolManagerMustBeLocked", type: "error" },
+  { inputs: [], name: "SignatureDeadlineExpired", type: "error" },
+  {
+    inputs: [
+      { internalType: "address", name: "subscriber", type: "address" },
+      { internalType: "bytes", name: "reason", type: "bytes" },
+    ],
+    name: "SubscriptionReverted",
+    type: "error",
+  },
+  { inputs: [], name: "Unauthorized", type: "error" },
+  {
+    inputs: [{ internalType: "uint256", name: "action", type: "uint256" }],
+    name: "UnsupportedAction",
+    type: "error",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "owner",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "spender",
+        type: "address",
+      },
+      { indexed: true, internalType: "uint256", name: "id", type: "uint256" },
+    ],
+    name: "Approval",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "address",
+        name: "owner",
+        type: "address",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "operator",
+        type: "address",
+      },
+      { indexed: false, internalType: "bool", name: "approved", type: "bool" },
+    ],
+    name: "ApprovalForAll",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "uint256",
+        name: "tokenId",
+        type: "uint256",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "subscriber",
+        type: "address",
+      },
+    ],
+    name: "Subscription",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, internalType: "address", name: "from", type: "address" },
+      { indexed: true, internalType: "address", name: "to", type: "address" },
+      { indexed: true, internalType: "uint256", name: "id", type: "uint256" },
+    ],
+    name: "Transfer",
+    type: "event",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      {
+        indexed: true,
+        internalType: "uint256",
+        name: "tokenId",
+        type: "uint256",
+      },
+      {
+        indexed: true,
+        internalType: "address",
+        name: "subscriber",
+        type: "address",
+      },
+    ],
+    name: "Unsubscription",
+    type: "event",
+  },
+  {
+    inputs: [],
+    name: "DOMAIN_SEPARATOR",
+    outputs: [{ internalType: "bytes32", name: "", type: "bytes32" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "WETH9",
+    outputs: [{ internalType: "contract IWETH9", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "spender", type: "address" },
+      { internalType: "uint256", name: "id", type: "uint256" },
+    ],
+    name: "approve",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "address", name: "owner", type: "address" }],
+    name: "balanceOf",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    name: "getApproved",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "tokenId", type: "uint256" }],
+    name: "getPoolAndPositionInfo",
+    outputs: [
+      {
+        components: [
+          { internalType: "Currency", name: "currency0", type: "address" },
+          { internalType: "Currency", name: "currency1", type: "address" },
+          { internalType: "uint24", name: "fee", type: "uint24" },
+          { internalType: "int24", name: "tickSpacing", type: "int24" },
+          { internalType: "contract IHooks", name: "hooks", type: "address" },
+        ],
+        internalType: "struct PoolKey",
+        name: "poolKey",
+        type: "tuple",
+      },
+      { internalType: "PositionInfo", name: "info", type: "uint256" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "tokenId", type: "uint256" }],
+    name: "getPositionLiquidity",
+    outputs: [{ internalType: "uint128", name: "liquidity", type: "uint128" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        components: [
+          { internalType: "Currency", name: "currency0", type: "address" },
+          { internalType: "Currency", name: "currency1", type: "address" },
+          { internalType: "uint24", name: "fee", type: "uint24" },
+          { internalType: "int24", name: "tickSpacing", type: "int24" },
+          { internalType: "contract IHooks", name: "hooks", type: "address" },
+        ],
+        internalType: "struct PoolKey",
+        name: "key",
+        type: "tuple",
+      },
+      { internalType: "uint160", name: "sqrtPriceX96", type: "uint160" },
+    ],
+    name: "initializePool",
+    outputs: [{ internalType: "int24", name: "", type: "int24" }],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "", type: "address" },
+      { internalType: "address", name: "", type: "address" },
+    ],
+    name: "isApprovedForAll",
+    outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "bytes", name: "unlockData", type: "bytes" },
+      { internalType: "uint256", name: "deadline", type: "uint256" },
+    ],
+    name: "modifyLiquidities",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "bytes", name: "actions", type: "bytes" },
+      { internalType: "bytes[]", name: "params", type: "bytes[]" },
+    ],
+    name: "modifyLiquiditiesWithoutUnlock",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "msgSender",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "bytes[]", name: "data", type: "bytes[]" }],
+    name: "multicall",
+    outputs: [{ internalType: "bytes[]", name: "results", type: "bytes[]" }],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "name",
+    outputs: [{ internalType: "string", name: "", type: "string" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "nextTokenId",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "owner", type: "address" },
+      { internalType: "uint256", name: "word", type: "uint256" },
+    ],
+    name: "nonces",
+    outputs: [{ internalType: "uint256", name: "bitmap", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "id", type: "uint256" }],
+    name: "ownerOf",
+    outputs: [{ internalType: "address", name: "owner", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "spender", type: "address" },
+      { internalType: "uint256", name: "tokenId", type: "uint256" },
+      { internalType: "uint256", name: "deadline", type: "uint256" },
+      { internalType: "uint256", name: "nonce", type: "uint256" },
+      { internalType: "bytes", name: "signature", type: "bytes" },
+    ],
+    name: "permit",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "owner", type: "address" },
+      {
+        components: [
+          {
+            components: [
+              { internalType: "address", name: "token", type: "address" },
+              { internalType: "uint160", name: "amount", type: "uint160" },
+              { internalType: "uint48", name: "expiration", type: "uint48" },
+              { internalType: "uint48", name: "nonce", type: "uint48" },
+            ],
+            internalType: "struct IAllowanceTransfer.PermitDetails",
+            name: "details",
+            type: "tuple",
+          },
+          { internalType: "address", name: "spender", type: "address" },
+          { internalType: "uint256", name: "sigDeadline", type: "uint256" },
+        ],
+        internalType: "struct IAllowanceTransfer.PermitSingle",
+        name: "permitSingle",
+        type: "tuple",
+      },
+      { internalType: "bytes", name: "signature", type: "bytes" },
+    ],
+    name: "permit",
+    outputs: [{ internalType: "bytes", name: "err", type: "bytes" }],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "permit2",
+    outputs: [
+      {
+        internalType: "contract IAllowanceTransfer",
+        name: "",
+        type: "address",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "owner", type: "address" },
+      {
+        components: [
+          {
+            components: [
+              { internalType: "address", name: "token", type: "address" },
+              { internalType: "uint160", name: "amount", type: "uint160" },
+              { internalType: "uint48", name: "expiration", type: "uint48" },
+              { internalType: "uint48", name: "nonce", type: "uint48" },
+            ],
+            internalType: "struct IAllowanceTransfer.PermitDetails[]",
+            name: "details",
+            type: "tuple[]",
+          },
+          { internalType: "address", name: "spender", type: "address" },
+          { internalType: "uint256", name: "sigDeadline", type: "uint256" },
+        ],
+        internalType: "struct IAllowanceTransfer.PermitBatch",
+        name: "_permitBatch",
+        type: "tuple",
+      },
+      { internalType: "bytes", name: "signature", type: "bytes" },
+    ],
+    name: "permitBatch",
+    outputs: [{ internalType: "bytes", name: "err", type: "bytes" }],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "owner", type: "address" },
+      { internalType: "address", name: "operator", type: "address" },
+      { internalType: "bool", name: "approved", type: "bool" },
+      { internalType: "uint256", name: "deadline", type: "uint256" },
+      { internalType: "uint256", name: "nonce", type: "uint256" },
+      { internalType: "bytes", name: "signature", type: "bytes" },
+    ],
+    name: "permitForAll",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "bytes25", name: "poolId", type: "bytes25" }],
+    name: "poolKeys",
+    outputs: [
+      { internalType: "Currency", name: "currency0", type: "address" },
+      { internalType: "Currency", name: "currency1", type: "address" },
+      { internalType: "uint24", name: "fee", type: "uint24" },
+      { internalType: "int24", name: "tickSpacing", type: "int24" },
+      { internalType: "contract IHooks", name: "hooks", type: "address" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "poolManager",
+    outputs: [
+      { internalType: "contract IPoolManager", name: "", type: "address" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "tokenId", type: "uint256" }],
+    name: "positionInfo",
+    outputs: [{ internalType: "PositionInfo", name: "info", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "nonce", type: "uint256" }],
+    name: "revokeNonce",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "from", type: "address" },
+      { internalType: "address", name: "to", type: "address" },
+      { internalType: "uint256", name: "id", type: "uint256" },
+    ],
+    name: "safeTransferFrom",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "from", type: "address" },
+      { internalType: "address", name: "to", type: "address" },
+      { internalType: "uint256", name: "id", type: "uint256" },
+      { internalType: "bytes", name: "data", type: "bytes" },
+    ],
+    name: "safeTransferFrom",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "operator", type: "address" },
+      { internalType: "bool", name: "approved", type: "bool" },
+    ],
+    name: "setApprovalForAll",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "uint256", name: "tokenId", type: "uint256" },
+      { internalType: "address", name: "newSubscriber", type: "address" },
+      { internalType: "bytes", name: "data", type: "bytes" },
+    ],
+    name: "subscribe",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "tokenId", type: "uint256" }],
+    name: "subscriber",
+    outputs: [
+      {
+        internalType: "contract ISubscriber",
+        name: "subscriber",
+        type: "address",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "bytes4", name: "interfaceId", type: "bytes4" }],
+    name: "supportsInterface",
+    outputs: [{ internalType: "bool", name: "", type: "bool" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "symbol",
+    outputs: [{ internalType: "string", name: "", type: "string" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "tokenDescriptor",
+    outputs: [
+      {
+        internalType: "contract IPositionDescriptor",
+        name: "",
+        type: "address",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "tokenId", type: "uint256" }],
+    name: "tokenURI",
+    outputs: [{ internalType: "string", name: "", type: "string" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "from", type: "address" },
+      { internalType: "address", name: "to", type: "address" },
+      { internalType: "uint256", name: "id", type: "uint256" },
+    ],
+    name: "transferFrom",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "bytes", name: "data", type: "bytes" }],
+    name: "unlockCallback",
+    outputs: [{ internalType: "bytes", name: "", type: "bytes" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "uint256", name: "tokenId", type: "uint256" }],
+    name: "unsubscribe",
+    outputs: [],
+    stateMutability: "payable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "unsubscribeGasLimit",
+    outputs: [{ internalType: "uint256", name: "", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  { stateMutability: "payable", type: "receive" },
+];
 
-// const main = async () => {
-//   if (config.PROJECT_SETTINGS.isLocal) {
-//     console.log("Running on Localhost");
-//   } else {
-//     console.log("Running on Live Net");
-//   }
+const positionManager = getContract({
+  address: POSITION_MANAGER_ADDR,
+  abi: POSITION_MANAGER_ABI,
+  client,
+});
 
-//   const { token0Contract, token1Contract, token0, token1 } =
-//     await getTokenAndContract(arbFor, arbAgainst, provider);
-//   uPair = await getPairContract(
-//     uFactory,
-//     token0.address,
-//     token1.address,
-//     provider,
-//   );
-//   sPair = await getPairContract(
-//     sFactory,
-//     token0.address,
-//     token1.address,
-//     provider,
-//   );
+const poolId = "0x864abca0a6202dba5b8868772308da953ff125b0f95015adbf";
+const poolKey = await positionManager.read.poolKeys([poolId]);
 
-//   console.log(`Uniswap Address: \t${await uPair.getAddress()}`);
-//   console.log(`Pancakeswap Address: \t${await pPair.getAddress()}\n`);
+async function doArbitrage(amount, startOnUniswap) {
+  return await walletClient.writeContract({
+    address: ARBITRAGE_CONTRACT_ADDR,
+    abi: ARBITRAGE_CONTRACT_ABI,
+    functionName: "executeFlashLoan",
+    account: privateKeyToAccount(process.env.PRIVATE_KEY),
+    args: [amount, WETH_ADDR, USDC_ADDR, startOnUniswap, poolKey],
+  });
+}
 
-//   // Get the Price on Uniswap
-//   uPrice = await getV3Price(uFactory, arbFor, arbAgainst, provider);
-//   console.log(
-//     `This is the price on Uniswap: \t${uPrice} ${token1.symbol}/${token0.symbol}`,
-//   );
-//   // Get the Price on Sushiswap
-//   sPrice = await getV3Price(sFactory, arbAgainst, arbFor, provider);
-//   console.log(
-//     `This is the price on Pancakeswap: ${pPrice} ${token1.symbol}/${token0.symbol}`,
-//   );
-
-//   // Initial Price difference
-//   const priceDifference = (uPrice / pPrice) * 100 - 100;
-//   console.log(
-//     `This is the Price Difference: \t${priceDifference.toFixed(4)}%\n`,
-//   );
-
-//   // Get the Quoter Contract on Sushiswap
-//   const pQuoter = new ethers.Contract(pQuoteAddress, QuoterV2.abi, provider);
-//   // Get the Quoter Contract on Uniswap
-//   const uQuoter = new ethers.Contract(uQuoteAddress, QuoterV2.abi, provider);
-
-//   uPair.on("Swap", async () => {
-//     if (!isExecuting) {
-//       isExecuting = true;
-//       attempts += 1;
-//       console.log("A Swap Event has occurred on Uniswap. Getting quote...");
-//       let result = await quoteSwap();
-//       if (result.profitable) {
-//         console.log(`Profitable: \t${result.profitable}`);
-//         console.log(`Ideal Amount In: \t${result.bestAmount}`);
-//         console.log(`Start on Uni: \t${result.startOnUni}`);
-//         console.log("Proceeding...");
-
-//         // Make signer from Private Key account
-//         const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-
-//         // Fetch token balances before
-//         const tokenBalanceBefore = await token0Contract.balanceOf(
-//           signer.address,
-//         );
-//         const ethBalanceBefore = await provider.getBalance(signer.address);
-//         console.log(ethers.formatEther(ethBalanceBefore));
-
-//         if (config.PROJECT_SETTINGS.isDeployed) {
-//           const tx = await arbitrageV3
-//             .connect(signer)
-//             .executeTrade(
-//               result.startOnUni,
-//               token0.address,
-//               token1.address,
-//               result.bestAmount,
-//               { gasLimit: gasLimit },
-//             );
-
-//           const receipt = await tx.wait();
-//           success += 1;
-//           console.log(
-//             `type: ${receipt.type} ${receipt.type == 2 ? console.log("Execute Trade Success") : console.log("Execute trade Failed")}`,
-//           );
-//         }
-//         const tokenBalanceAfter = await token0Contract.balanceOf(
-//           signer.address,
-//         );
-//         const ethBalanceAfter = await provider.getBalance(signer.address);
-
-//         const tokenBalanceDifference = tokenBalanceAfter - tokenBalanceBefore;
-//         const ethBalanceDifference = ethBalanceBefore - ethBalanceAfter;
-
-//         const data = {
-//           "ETH Balance Before": ethers.formatUnits(ethBalanceBefore, "ether"), // should be 0
-//           "ETH Balance After": ethers.formatUnits(ethBalanceAfter, "ether"),
-//           "ETH Spent (gas)": ethers.formatUnits(
-//             ethBalanceDifference.toString(),
-//             "ether",
-//           ),
-//           "-": {},
-//           "WETH Balance BEFORE": ethers.formatUnits(
-//             tokenBalanceBefore,
-//             "ether",
-//           ),
-//           "WETH Balance AFTER": ethers.formatUnits(tokenBalanceAfter, "ether"),
-//           "WETH Gained/Lost": ethers.formatUnits(
-//             tokenBalanceDifference.toString(),
-//             "ether",
-//           ),
-//           "-": {},
-//           "Total Gained/Lost": `${ethers.formatUnits((tokenBalanceDifference - ethBalanceDifference).toString(), "ether")} ETH`,
-//         };
-
-//         console.table(data);
-//       }
-//       isExecuting = false;
-//       console.log(
-//         `Is Executing: ${isExecuting} \nAttempts: ${success}/${attempts}\nWaiting for next Swap Event...\n`,
-//       );
-//     }
-//   });
-
-//   pPair.on("Swap", async () => {
-//     if (!isExecuting) {
-//       isExecuting = true;
-//       attempts += 1;
-//       console.log("A Swap Event has occurred on Uniswap. Getting quote...");
-//       let result = await quoteSwap();
-//       if (result.profitable) {
-//         console.log(`Profitable: \t${result.profitable}`);
-//         console.log(`Ideal Amount In: \t${result.bestAmount}`);
-//         console.log(`Start on Uni: \t${result.startOnUni}`);
-//         console.log("Proceeding...");
-
-//         // Make signer from Private Key account
-//         const signer = new ethers.Wallet(process.env.PRIVATE_KEY, provider);
-
-//         // Fetch token balances before
-//         const tokenBalanceBefore = await token0Contract.balanceOf(
-//           signer.address,
-//         );
-//         const ethBalanceBefore = await provider.getBalance(signer.address);
-
-//         if (config.PROJECT_SETTINGS.isDeployed) {
-//           const tx = await arbitrageV3
-//             .connect(signer)
-//             .executeTrade(
-//               result.startOnUni,
-//               token0.address,
-//               token1.address,
-//               result.bestAmount,
-//               { gasLimit: gasLimit },
-//             );
-
-//           const receipt = await tx.wait();
-//           success += 1;
-//           console.log(
-//             `type: ${receipt.type} ${receipt.type == 2 ? console.log("Execute Trade Success") : console.log("Execute trade Failed")}`,
-//           );
-//         }
-//         const tokenBalanceAfter = await token0Contract.balanceOf(
-//           signer.address,
-//         );
-//         const ethBalanceAfter = await provider.getBalance(signer.address);
-
-//         const tokenBalanceDifference = tokenBalanceAfter - tokenBalanceBefore;
-//         const ethBalanceDifference = ethBalanceBefore - ethBalanceAfter;
-
-//         const data = {
-//           "ETH Balance Before": ethers.formatUnits(ethBalanceBefore, "ether"), // should be 0
-//           "ETH Balance After": ethers.formatUnits(ethBalanceAfter, "ether"),
-//           "ETH Spent (gas)": ethers.formatUnits(
-//             ethBalanceDifference.toString(),
-//             "ether",
-//           ),
-//           "-": {},
-//           "WETH Balance BEFORE": ethers.formatUnits(
-//             tokenBalanceBefore,
-//             "ether",
-//           ),
-//           "WETH Balance AFTER": ethers.formatUnits(tokenBalanceAfter, "ether"),
-//           "WETH Gained/Lost": ethers.formatUnits(
-//             tokenBalanceDifference.toString(),
-//             "ether",
-//           ),
-//           "-": {},
-//           "Total Gained/Lost": `${ethers.formatUnits((tokenBalanceDifference - ethBalanceDifference).toString(), "ether")} ETH`,
-//         };
-
-//         console.table(data);
-//       }
-//       isExecuting = false;
-//       console.log(
-//         `Is Executing: ${isExecuting} \nAttempts: ${success}/${attempts}\nWaiting for next Swap Event...\n`,
-//       );
-//     }
-//   });
-
-//   const quoteSwap = async () => {
-//     let profit,
-//       profitable,
-//       amountOut,
-//       best = 0,
-//       exchangeA,
-//       exchangeB,
-//       bestAmount = 0;
-
-//     // Get the Price on Uniswap
-//     uPrice = await getV3Price(uFactory, arbFor, arbAgainst, provider);
-//     console.log(
-//       `This is the price on Uniswap: \t${uPrice} ${token1.symbol}/${token0.symbol}`,
-//     );
-//     // Get the Price on Sushiswap
-//     pPrice = await getV3Price(sFactory, arbFor, arbAgainst, provider);
-//     console.log(
-//       `This is the price on Sushiswap: ${sPrice} ${token1.symbol}/${token0.symbol}`,
-//     );
-//     // Determine the Price difference
-//     const priceDifference = (uPrice / pPrice) * 100 - 100;
-//     console.log(
-//       `This is the Price Difference: \t${priceDifference.toFixed(4)}%\n`,
-//     );
-
-//     // Determine which exchange to start on
-//     if (uPrice >= pPrice) {
-//       console.log("Buy on Uniswap, Sell on Pancakeswap");
-//       exchangeA = uQuoter;
-//       exchangeB = pQuoter;
-//       startOnUni = true;
-//     } else {
-//       console.log("Buy on Pancakeswap, Sell on Uniswap");
-//       exchangeA = pQuoter;
-//       exchangeB = uQuoter;
-//       startOnUni = false;
-//     }
-
-//     const fee = 3000;
-//     let amountIn = 100000000000000000n;
-
-//     // Loop through a series of amountIns to find the most profitable
-//     for (let i = 0; i < 20; i++) {
-//       console.log(
-//         `----------------------------i=${i} -------- amountIn=${amountIn} (${ethers.formatEther(amountIn)})----------------------------`,
-//       );
-//       let quote1 = await getQuote(exchangeA, arbFor, arbAgainst, amountIn, fee);
-//       let quote2 = await getQuote(
-//         exchangeB,
-//         arbAgainst,
-//         arbFor,
-//         quote1.amountOut,
-//         fee,
-//       );
-//       profit = quote2.amountOut - amountIn;
-//       console.log(`Profit: ${ethers.formatEther(profit)}`);
-//       if (profit > best) {
-//         best = profit;
-//         bestAmount = amountIn;
-//         console.log(`New Profit: ${profit} <<<<<<<<<<<<<<<<<<<<<<<<<<<`);
-//       }
-//       amountIn += 100000000000000000n;
-//     }
-//     console.log(`\nBest: ${best}\n`);
-
-//     //
-//     if (best > 0) {
-//       console.log(
-//         `Potential arbitrage profit of ${ethers.formatEther(best)}` +
-//           ` available using ${ethers.formatEther(bestAmount)}${token0.symbol}` +
-//           ` for a ${priceDifference.toFixed(4)}% price difference. \nProceeding with swap!\n`,
-//       );
-//       profitable = true;
-//       return { profitable, bestAmount, startOnUni };
-//     } else {
-//       console.log(`Arbitrage quote is not in profit. Cancelling attempt.\n`);
-//       profitable = false;
-//       return { profitable, bestAmount, startOnUni };
-//     }
-//   };
-// };
-
-// main();
+console.log(await doArbitrage(100, false));
