@@ -1,72 +1,422 @@
 import "dotenv/config";
-import config from "../config.json" with { type: "json" };
-import { Trade, Pool, Hook } from "@uniswap/v4-sdk";
-import { Price, Token, NativeCurrency, ChainId } from "@uniswap/sdk-core";
-import { Alchemy, Network, Contract } from "alchemy-sdk";
+import { NativeCurrency, Token, ChainId } from "@uniswap/sdk-core";
+import {
+  createPublicClient,
+  http,
+  getContract,
+  encodeAbiParameters,
+  parseUnits,
+} from "viem";
+import { arbitrum } from "viem/chains";
 import { ethers } from "ethers";
-// import IERC20 from "@openzeppelin/contracts/build/contracts/ERC20.json" with { type: "json" };
 
-const alchemy = new Alchemy({
-    apiKey: process.env.ALCHEMY_API_KEY,
-    network: Network.ARB_MAINNET,
+const client = createPublicClient({
+  chain: arbitrum,
+  transport: http(),
 });
 
-const WETH_ADDR = "0x82af49447d8a07e3bd95bd0d56f35241523fbab1";
-const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
+const STATEVIEW_ADDRESS = "0x76fd297e2d437cd7f76d50f01afe6160f86e9990";
+const STATEVIEW_ABI = [
+  {
+    inputs: [
+      {
+        internalType: "contract IPoolManager",
+        name: "_poolManager",
+        type: "address",
+      },
+    ],
+    stateMutability: "nonpayable",
+    type: "constructor",
+  },
+  {
+    inputs: [{ internalType: "PoolId", name: "poolId", type: "bytes32" }],
+    name: "getFeeGrowthGlobals",
+    outputs: [
+      { internalType: "uint256", name: "feeGrowthGlobal0", type: "uint256" },
+      { internalType: "uint256", name: "feeGrowthGlobal1", type: "uint256" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "PoolId", name: "poolId", type: "bytes32" },
+      { internalType: "int24", name: "tickLower", type: "int24" },
+      { internalType: "int24", name: "tickUpper", type: "int24" },
+    ],
+    name: "getFeeGrowthInside",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "feeGrowthInside0X128",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "feeGrowthInside1X128",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "PoolId", name: "poolId", type: "bytes32" }],
+    name: "getLiquidity",
+    outputs: [{ internalType: "uint128", name: "liquidity", type: "uint128" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "PoolId", name: "poolId", type: "bytes32" },
+      { internalType: "bytes32", name: "positionId", type: "bytes32" },
+    ],
+    name: "getPositionInfo",
+    outputs: [
+      { internalType: "uint128", name: "liquidity", type: "uint128" },
+      {
+        internalType: "uint256",
+        name: "feeGrowthInside0LastX128",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "feeGrowthInside1LastX128",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "PoolId", name: "poolId", type: "bytes32" },
+      { internalType: "address", name: "owner", type: "address" },
+      { internalType: "int24", name: "tickLower", type: "int24" },
+      { internalType: "int24", name: "tickUpper", type: "int24" },
+      { internalType: "bytes32", name: "salt", type: "bytes32" },
+    ],
+    name: "getPositionInfo",
+    outputs: [
+      { internalType: "uint128", name: "liquidity", type: "uint128" },
+      {
+        internalType: "uint256",
+        name: "feeGrowthInside0LastX128",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "feeGrowthInside1LastX128",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "PoolId", name: "poolId", type: "bytes32" },
+      { internalType: "bytes32", name: "positionId", type: "bytes32" },
+    ],
+    name: "getPositionLiquidity",
+    outputs: [{ internalType: "uint128", name: "liquidity", type: "uint128" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "PoolId", name: "poolId", type: "bytes32" }],
+    name: "getSlot0",
+    outputs: [
+      { internalType: "uint160", name: "sqrtPriceX96", type: "uint160" },
+      { internalType: "int24", name: "tick", type: "int24" },
+      { internalType: "uint24", name: "protocolFee", type: "uint24" },
+      { internalType: "uint24", name: "lpFee", type: "uint24" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "PoolId", name: "poolId", type: "bytes32" },
+      { internalType: "int16", name: "tick", type: "int16" },
+    ],
+    name: "getTickBitmap",
+    outputs: [{ internalType: "uint256", name: "tickBitmap", type: "uint256" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "PoolId", name: "poolId", type: "bytes32" },
+      { internalType: "int24", name: "tick", type: "int24" },
+    ],
+    name: "getTickFeeGrowthOutside",
+    outputs: [
+      {
+        internalType: "uint256",
+        name: "feeGrowthOutside0X128",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "feeGrowthOutside1X128",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "PoolId", name: "poolId", type: "bytes32" },
+      { internalType: "int24", name: "tick", type: "int24" },
+    ],
+    name: "getTickInfo",
+    outputs: [
+      { internalType: "uint128", name: "liquidityGross", type: "uint128" },
+      { internalType: "int128", name: "liquidityNet", type: "int128" },
+      {
+        internalType: "uint256",
+        name: "feeGrowthOutside0X128",
+        type: "uint256",
+      },
+      {
+        internalType: "uint256",
+        name: "feeGrowthOutside1X128",
+        type: "uint256",
+      },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "PoolId", name: "poolId", type: "bytes32" },
+      { internalType: "int24", name: "tick", type: "int24" },
+    ],
+    name: "getTickLiquidity",
+    outputs: [
+      { internalType: "uint128", name: "liquidityGross", type: "uint128" },
+      { internalType: "int128", name: "liquidityNet", type: "int128" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "poolManager",
+    outputs: [
+      { internalType: "contract IPoolManager", name: "", type: "address" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+];
+
+const stateView = getContract({
+  address: STATEVIEW_ADDRESS,
+  abi: STATEVIEW_ABI,
+  client,
+});
+
+const WETH_ADDR = "0x82af49447d8a07e3bd95bd0d56f35241523fbab1"; // WETH address
+const USDC_ADDR = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"; // USDC address
 const ETH = new NativeCurrency(ChainId.ARBITRUM_ONE, 18);
 const USDC = new Token(ChainId.ARBITRUM_ONE, USDC_ADDR, 6);
-const POOL_MANAGER_ADDRESS = "0x360e68faccca8ca495c1b759fd9eee466db9fb32";
-const POOL_MANAGER_ABI = [
-    "function getPoolState(bytes32 poolId) external view returns (uint160 sqrtPriceX96, int24 tick, uint128 liquidity)",
+
+const POOL_ID =
+  "0x864abca0a6202dba5b8868772308da953ff125b0f95015adbf89aaf579e903a8";
+console.log("Pool ID:", POOL_ID);
+
+async function getPoolPrice() {
+  const [sqrtPriceX96, tick, protocolFee, lpFee] =
+    await stateView.read.getSlot0([POOL_ID]);
+  const price = (Number(sqrtPriceX96) ** 2 / 2 ** 192) * 10 ** 12;
+  return price;
+}
+
+const PANCAKE_POOL_ID = "0x7fcdc35463e3770c2fb992716cd070b63540b947";
+const PANCAKE_QUOTER_V2 = "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997";
+const PANCAKE_QUOTER_V2_ABI = [
+  {
+    inputs: [
+      { internalType: "address", name: "_deployer", type: "address" },
+      { internalType: "address", name: "_factory", type: "address" },
+      { internalType: "address", name: "_WETH9", type: "address" },
+    ],
+    stateMutability: "nonpayable",
+    type: "constructor",
+  },
+  {
+    inputs: [],
+    name: "WETH9",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "deployer",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "factory",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "int256", name: "amount0Delta", type: "int256" },
+      { internalType: "int256", name: "amount1Delta", type: "int256" },
+      { internalType: "bytes", name: "path", type: "bytes" },
+    ],
+    name: "pancakeV3SwapCallback",
+    outputs: [],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "bytes", name: "path", type: "bytes" },
+      { internalType: "uint256", name: "amountIn", type: "uint256" },
+    ],
+    name: "quoteExactInput",
+    outputs: [
+      { internalType: "uint256", name: "amountOut", type: "uint256" },
+      {
+        internalType: "uint160[]",
+        name: "sqrtPriceX96AfterList",
+        type: "uint160[]",
+      },
+      {
+        internalType: "uint32[]",
+        name: "initializedTicksCrossedList",
+        type: "uint32[]",
+      },
+      { internalType: "uint256", name: "gasEstimate", type: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        components: [
+          { internalType: "address", name: "tokenIn", type: "address" },
+          { internalType: "address", name: "tokenOut", type: "address" },
+          { internalType: "uint256", name: "amountIn", type: "uint256" },
+          { internalType: "uint24", name: "fee", type: "uint24" },
+          {
+            internalType: "uint160",
+            name: "sqrtPriceLimitX96",
+            type: "uint160",
+          },
+        ],
+        internalType: "struct IQuoterV2.QuoteExactInputSingleParams",
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "quoteExactInputSingle",
+    outputs: [
+      { internalType: "uint256", name: "amountOut", type: "uint256" },
+      { internalType: "uint160", name: "sqrtPriceX96After", type: "uint160" },
+      {
+        internalType: "uint32",
+        name: "initializedTicksCrossed",
+        type: "uint32",
+      },
+      { internalType: "uint256", name: "gasEstimate", type: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "bytes", name: "path", type: "bytes" },
+      { internalType: "uint256", name: "amountOut", type: "uint256" },
+    ],
+    name: "quoteExactOutput",
+    outputs: [
+      { internalType: "uint256", name: "amountIn", type: "uint256" },
+      {
+        internalType: "uint160[]",
+        name: "sqrtPriceX96AfterList",
+        type: "uint160[]",
+      },
+      {
+        internalType: "uint32[]",
+        name: "initializedTicksCrossedList",
+        type: "uint32[]",
+      },
+      { internalType: "uint256", name: "gasEstimate", type: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        components: [
+          { internalType: "address", name: "tokenIn", type: "address" },
+          { internalType: "address", name: "tokenOut", type: "address" },
+          { internalType: "uint256", name: "amount", type: "uint256" },
+          { internalType: "uint24", name: "fee", type: "uint24" },
+          {
+            internalType: "uint160",
+            name: "sqrtPriceLimitX96",
+            type: "uint160",
+          },
+        ],
+        internalType: "struct IQuoterV2.QuoteExactOutputSingleParams",
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "quoteExactOutputSingle",
+    outputs: [
+      { internalType: "uint256", name: "amountIn", type: "uint256" },
+      { internalType: "uint160", name: "sqrtPriceX96After", type: "uint160" },
+      {
+        internalType: "uint32",
+        name: "initializedTicksCrossed",
+        type: "uint32",
+      },
+      { internalType: "uint256", name: "gasEstimate", type: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
 ];
-const provider = await alchemy.config.getProvider();
-const poolManager = new Contract(
-    POOL_MANAGER_ADDRESS,
-    POOL_MANAGER_ABI,
-    provider,
-);
 
-function getPoolId(
-    token0,
-    token1,
-    fee,
-    hookAddress = ethers.constants.AddressZero,
-) {
-    const abiCoder = ethers.utils.defaultAbiCoder;
-    return ethers.utils.keccak256(
-        abiCoder.encode(
-            ["address", "address", "uint24", "address"],
-            [token0, token1, fee, hookAddress],
-        ),
-    );
+const quoterV2 = getContract({
+  address: PANCAKE_QUOTER_V2,
+  abi: PANCAKE_QUOTER_V2_ABI,
+  client,
+});
+
+async function pancakeGetPrice() {
+  console.log(WETH_ADDR);
+  console.log(USDC_ADDR);
+  const params = encodeAbiParameters(
+    [
+      { type: "address" },
+      { type: "address" },
+      { type: "uint256" },
+      { type: "uint24" },
+      { type: "uint160" },
+    ],
+    [WETH_ADDR, USDC_ADDR, 1, 100, 0],
+  );
+  const quote = await quoterV2.read.quoteExactInputSingle([params]);
+  return quote;
 }
-
-const POOL_FEE = 500; // 0.05%
-const POOL_ID = getPoolId(WETH_ADDR, USDC_ADDR, POOL_FEE);
-
-async function getPoolState() {
-    const [sqrtPriceX96, tick, liquidity] =
-        await poolManager.getPoolState(POOL_ID);
-    return { sqrtPriceX96, tick, liquidity };
-}
-
-async function getEthUsdcPrice() {
-    const { sqrtPriceX96, liquidity, tick } = await getPoolState();
-    const pool = new Pool(
-        ETH,
-        USDC,
-        POOL_FEE,
-        sqrtPriceX96.toString(),
-        liquidity.toString(),
-        tick,
-    );
-    console.log(`1 USDC = ${pool.token0Price.toSignificant(6)} ETH`);
-    console.log(`1 ETH = ${pool.token1Price.toSignificant(6)} USDC`);
-}
-
-getEthUsdcPrice();
-
-// const USDC_ETH = new Pool(ETH, USDC, fee);
+console.log(await pancakeGetPrice());
 
 // Trade.bestTradeExactIn([
 //     new Pool("0x88e6A0c2dDD26FEEb64F039a2c41296FcB3f5640"),
