@@ -930,7 +930,7 @@ async function pancakeGetPrice() {
     return price;
 }
 
-const ARBITRAGE_CONTRACT_ADDR = "0xCAFE136594213dba5305326218A712cD4C1b4507";
+const ARBITRAGE_CONTRACT_ADDR = "0x84DAB8B8d3E991749e4Daa56C70C9F698101b317";
 const ARBITRAGE_CONTRACT_ABI = [
     {
         inputs: [
@@ -1093,6 +1093,17 @@ const ARBITRAGE_CONTRACT_ABI = [
     },
     {
         inputs: [
+            { internalType: "address", name: "token", type: "address" },
+            { internalType: "address", name: "user", type: "address" },
+            { internalType: "uint256", name: "amount", type: "uint256" },
+        ],
+        name: "refundToken",
+        outputs: [],
+        stateMutability: "nonpayable",
+        type: "function",
+    },
+    {
+        inputs: [
             { internalType: "address payable", name: "user", type: "address" },
             { internalType: "uint256", name: "amount", type: "uint256" },
         ],
@@ -1126,6 +1137,7 @@ const ARBITRAGE_CONTRACT_ABI = [
     },
     { stateMutability: "payable", type: "receive" },
 ];
+
 const arbitrageContract = getContract({
     address: ARBITRAGE_CONTRACT_ADDR,
     abi: ARBITRAGE_CONTRACT_ABI,
@@ -1784,7 +1796,7 @@ async function doArbitrage(amount, startOnUniswap) {
         abi: ARBITRAGE_CONTRACT_ABI,
         functionName: "executeFlashLoan",
         account: privateKeyToAccount(process.env.PRIVATE_KEY),
-        args: [amount, WETH_ADDR, USDC_ADDR, startOnUniswap, poolKey],
+        args: [amount, USDC_ADDR, WETH_ADDR, startOnUniswap, poolKey],
     });
     return await walletClient.writeContract(request);
 }
@@ -1793,17 +1805,17 @@ while (true) {
     const uniswap_price = await getPoolPrice();
     const pancakeswap_price = await pancakeGetPrice();
 
-    const amount = 1000000000000000000n;
+    const amount0 = 1000;
 
     if (uniswap_price > pancakeswap_price) {
         try {
-            await doArbitrage(amount, true);
+            await doArbitrage(amount0, false);
         } catch (e) {
             console.error(e);
         }
     } else {
         try {
-            await doArbitrage(amount, false);
+            await doArbitrage(amount0, true);
         } catch (e) {
             console.error(e);
         }

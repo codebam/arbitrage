@@ -48,6 +48,12 @@ contract Arbitrage is Ownable {
         require(success, "Refund failed");
     }
 
+    function refundToken(address token, address user, uint256 amount) external onlyOwner {
+        require(IERC20(token).balanceOf(address(this)) >= amount, "Not enough token balance");
+        bool success = IERC20(token).transfer(user, amount);
+        require(success, "Token refund failed");
+    }
+
     constructor(ISwapRouter _pRouter, UniversalRouter _uRouter, address _poolManager, address _permit2, address _balancerVault) Ownable(msg.sender) {
         uRouter = UniversalRouter(_uRouter);
         pRouter = _pRouter;
@@ -87,19 +93,19 @@ contract Arbitrage is Ownable {
         path[1] = token1;
 
         if (startOnUniswap) {
-            _Uniswap(key, path, uint160(amount), 0, 281474976710655, uRouter);
+            _Uniswap(key, path, uint160(amount), 0, 3600, uRouter);
 
             path[0] = token1;
             path[1] = token0;
 
-            _Pancakeswap(token0, token1, uint160(IERC20(token1).balanceOf(address(this))), 281474976710655, pRouter);
+            _Pancakeswap(path[0], path[1], uint160(IERC20(token1).balanceOf(address(this))), 3600, pRouter);
         } else {
-            _Pancakeswap(token0, token1, uint160(amount), 281474976710655, pRouter);
+            _Pancakeswap(path[0], path[1], uint160(amount), 3600, pRouter);
 
             path[0] = token1;
             path[1] = token0;
 
-            _Uniswap(key, path, uint160(IERC20(token1).balanceOf(address(this))), amount, 281474976710655, uRouter);
+            _Uniswap(key, path, uint160(IERC20(token1).balanceOf(address(this))), amount, 3600, uRouter);
         }
 
         // Repay the loan
