@@ -92,9 +92,9 @@ contract Arbitrage is Ownable {
             path[0] = token1;
             path[1] = token0;
 
-            _Pancakeswap(token0, token1, uint160(IERC20(token1).balanceOf(address(this))), pRouter);
+            _Pancakeswap(token0, token1, uint160(IERC20(token1).balanceOf(address(this))), 281474976710655, pRouter);
         } else {
-            _Pancakeswap(token0, token1, uint160(amount), pRouter);
+            _Pancakeswap(token0, token1, uint160(amount), 281474976710655, pRouter);
 
             path[0] = token1;
             path[1] = token0;
@@ -113,10 +113,10 @@ contract Arbitrage is Ownable {
         address token0,
         address token1,
         uint160 _amountIn,
+        uint48 expiration,
         ISwapRouter router
     ) internal returns (uint256 amountOut) {
-        TransferHelper.safeTransferFrom(token0, msg.sender, address(this), _amountIn);
-        TransferHelper.safeApprove(token0, address(router), _amountIn);
+        approveTokenWithPermit2(token0, _amountIn, expiration, address(router));
         ISwapRouter.ExactInputSingleParams memory params =
             ISwapRouter.ExactInputSingleParams({
                 tokenIn: token0,

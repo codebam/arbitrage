@@ -930,7 +930,7 @@ async function pancakeGetPrice() {
     return price;
 }
 
-const ARBITRAGE_CONTRACT_ADDR = "0xd17de3f4169d5a39880a11b68345664a31fd3a32";
+const ARBITRAGE_CONTRACT_ADDR = "0xCAFE136594213dba5305326218A712cD4C1b4507";
 const ARBITRAGE_CONTRACT_ABI = [
     {
         inputs: [
@@ -1793,22 +1793,17 @@ while (true) {
     const uniswap_price = await getPoolPrice();
     const pancakeswap_price = await pancakeGetPrice();
 
-    const amount = Math.floor(
-        (Number(1000000000000000000n) *
-            (Math.max(uniswap_price, pancakeswap_price) -
-                Math.min(uniswap_price, pancakeswap_price))) /
-        2,
-    );
+    const amount = 1000000000000000000n;
 
     if (uniswap_price > pancakeswap_price) {
         try {
-            await doArbitrage(amount, false);
+            await doArbitrage(amount, true);
         } catch (e) {
             console.error(e);
         }
     } else {
         try {
-            await doArbitrage(amount, true);
+            await doArbitrage(amount, false);
         } catch (e) {
             console.error(e);
         }
