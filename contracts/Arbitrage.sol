@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: GPL-3.0-or-later
 pragma solidity 0.8.26;
 
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -54,10 +54,7 @@ contract Arbitrage {
 
     function executeFlashLoan(uint256 amount, address token0, address token1, bool startOnUniswap, PoolKey memory key) external {
         bytes memory userData = abi.encode(amount, token0, token1, startOnUniswap, key);
-        try balancerVault.unlock(abi.encodeWithSelector(this.receiveFlashLoan.selector, userData)) {
-        } catch {
-            emit Log("unlocking vault failed.");
-        }
+        balancerVault.unlock(abi.encodeWithSelector(this.receiveFlashLoan.selector, userData));
     }
 
     function receiveFlashLoan(bytes memory userData) external {
@@ -67,11 +64,7 @@ contract Arbitrage {
         (uint256 amount, address token0, address token1, bool startOnUniswap, PoolKey memory key) = abi.decode(userData, (uint256, address, address, bool, PoolKey));
 
         // Send some tokens from the vault to this contract (taking a flash loan)
-        try balancerVault.sendTo(IERC20(token0), address(this), amount) {
-
-        } catch {
-            emit Log("sending tokens from flash loan failed.");
-        }
+        balancerVault.sendTo(IERC20(token0), address(this), amount);
 
         // Execute any logic with the borrowed funds (e.g., arbitrage, liquidation, etc.)
         address[] memory path = new address[](2);
@@ -122,10 +115,9 @@ contract Arbitrage {
                 sqrtPriceLimitX96: 0
             });
 
-        try router.exactInputSingle(params) {
-        } catch {
-            emit Log("pancakeswap swap failed.");
-        }
+        amountOut = router.exactInputSingle(params);
+        return amountOut;
+
     }
 
     function _Uniswap(
@@ -167,11 +159,7 @@ contract Arbitrage {
         inputs[0] = abi.encode(actions, params);
 
         // Execute the swap
-        try router.execute(commands, inputs, block.timestamp) {
-
-        } catch {
-            emit Log("uniswap swap failed.");
-        }
+        router.execute(commands, inputs, block.timestamp);
 
         // Verify and return the output amount
         amountOut = IERC20(address(uint160(key.currency1.toId()))).balanceOf(address(this));
