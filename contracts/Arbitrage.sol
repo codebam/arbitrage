@@ -21,8 +21,6 @@ import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
 contract Arbitrage {
     using StateLibrary for IPoolManager;
 
-    event Log(string message);
-
     IPoolManager public immutable poolManager;
     IPermit2 public immutable permit2;
     IVaultMain public immutable balancerVault;
