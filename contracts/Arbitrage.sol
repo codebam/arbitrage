@@ -18,7 +18,9 @@ import { Commands } from "@uniswap/universal-router/contracts/libraries/Commands
 import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
 
-contract Arbitrage {
+import "@openzeppelin/contracts/access/Ownable.sol";
+
+contract Arbitrage is Ownable {
     using StateLibrary for IPoolManager;
 
     IPoolManager public immutable poolManager;
@@ -27,17 +29,31 @@ contract Arbitrage {
 
     UniversalRouter public immutable uRouter;
     ISwapRouter public immutable pRouter;
-    address public owner;
 
     uint24 public constant poolFee = 100;
 
-    constructor(ISwapRouter _pRouter, UniversalRouter _uRouter, address _poolManager, address _permit2, address _balancerVault) {
+    event Received(address sender, uint256 amount);
+
+    receive() external payable {
+        emit Received(msg.sender, msg.value);
+    }
+
+    fallback() external payable {
+        emit Received(msg.sender, msg.value);
+    }
+
+    function refundUser(address payable user, uint256 amount) external onlyOwner {
+        require(address(this).balance >= amount, "Not enough balance");
+        (bool success, ) = user.call{value: amount}("");
+        require(success, "Refund failed");
+    }
+
+    constructor(ISwapRouter _pRouter, UniversalRouter _uRouter, address _poolManager, address _permit2, address _balancerVault) Ownable(msg.sender) {
         uRouter = UniversalRouter(_uRouter);
         pRouter = _pRouter;
         poolManager = IPoolManager(_poolManager);
         permit2 = IPermit2(_permit2);
         balancerVault = IVaultMain(_balancerVault);
-        owner = msg.sender;
     }
 
     function approveTokenWithPermit2(
@@ -99,8 +115,8 @@ contract Arbitrage {
         uint160 _amountIn,
         ISwapRouter router
     ) internal returns (uint256 amountOut) {
-        TransferHelper.safeTransferFrom(token1, msg.sender, address(this), _amountIn);
-        TransferHelper.safeApprove(token1, address(router), _amountIn);
+        TransferHelper.safeTransferFrom(token0, msg.sender, address(this), _amountIn);
+        TransferHelper.safeApprove(token0, address(router), _amountIn);
         ISwapRouter.ExactInputSingleParams memory params =
             ISwapRouter.ExactInputSingleParams({
                 tokenIn: token0,
