@@ -31,7 +31,7 @@ contract Arbitrage {
     ISwapRouter public immutable pRouter;
     address public owner;
 
-    uint24 public constant poolFee = 3000;
+    uint24 public constant poolFee = 100;
 
     constructor(ISwapRouter _pRouter, UniversalRouter _uRouter, address _poolManager, address _permit2, address _balancerVault) {
         uRouter = UniversalRouter(_uRouter);
