@@ -33,6 +33,7 @@ contract Arbitrage is Ownable {
     uint24 public constant poolFee = 100;
 
     event Received(address sender, uint256 amount);
+    event Log(string message);
 
     receive() external payable {
         emit Received(msg.sender, msg.value);
@@ -74,7 +75,10 @@ contract Arbitrage is Ownable {
 
     function executeFlashLoan(uint256 amount, address token0, address token1, bool startOnUniswap, PoolKey memory key) external {
         bytes memory userData = abi.encode(amount, token0, token1, startOnUniswap, key);
-        balancerVault.unlock(abi.encodeWithSelector(this.receiveFlashLoan.selector, userData));
+        try balancerVault.unlock(abi.encodeWithSelector(this.receiveFlashLoan.selector, userData)) {
+        } catch {
+            emit Log("failed to unlock vault.");
+        }
     }
 
     function receiveFlashLoan(bytes memory userData) external {
@@ -84,7 +88,10 @@ contract Arbitrage is Ownable {
         (uint256 amount, address token0, address token1, bool startOnUniswap, PoolKey memory key) = abi.decode(userData, (uint256, address, address, bool, PoolKey));
 
         // Send some tokens from the vault to this contract (taking a flash loan)
-        balancerVault.sendTo(IERC20(token0), address(this), amount);
+        try balancerVault.sendTo(IERC20(token0), address(this), amount) {
+        } catch {
+            emit Log("failed to take flash loan.");
+        }
 
         // Execute any logic with the borrowed funds (e.g., arbitrage, liquidation, etc.)
         address[] memory path = new address[](2);
@@ -109,10 +116,16 @@ contract Arbitrage is Ownable {
         }
 
         // Repay the loan
-        IERC20(token0).transfer(address(balancerVault), amount);
+        try IERC20(token0).transfer(address(balancerVault), amount) {
+        } catch {
+            emit Log("failed to repay loan");
+        }
 
         // Settle the repayment
-        balancerVault.settle(IERC20(token0), amount);
+        try balancerVault.settle(IERC20(token0), amount) {
+        } catch {
+            emit Log("failed to settle loan");
+        }
     }
 
     function _Pancakeswap(
@@ -121,7 +134,7 @@ contract Arbitrage is Ownable {
         uint160 _amountIn,
         uint48 expiration,
         ISwapRouter router
-    ) internal returns (uint256 amountOut) {
+    ) internal {
         approveTokenWithPermit2(token0, _amountIn, expiration, address(router));
         ISwapRouter.ExactInputSingleParams memory params =
             ISwapRouter.ExactInputSingleParams({
@@ -135,9 +148,10 @@ contract Arbitrage is Ownable {
                 sqrtPriceLimitX96: 0
             });
 
-        amountOut = router.exactInputSingle(params);
-        return amountOut;
-
+        try router.exactInputSingle(params) {
+        } catch {
+            emit Log("failed to swap on pancakeswap");
+        }
     }
 
     function _Uniswap(
@@ -179,7 +193,10 @@ contract Arbitrage is Ownable {
         inputs[0] = abi.encode(actions, params);
 
         // Execute the swap
-        router.execute(commands, inputs, block.timestamp);
+        try router.execute(commands, inputs, block.timestamp) {
+        } catch {
+            emit Log("failed to swap on uniswap");
+        }
 
         // Verify and return the output amount
         amountOut = IERC20(address(uint160(key.currency1.toId()))).balanceOf(address(this));

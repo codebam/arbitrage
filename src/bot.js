@@ -7,10 +7,13 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
+import { ethers } from "ethers";
 
 const client = createPublicClient({
     chain: arbitrum,
-    transport: http(),
+    transport: http(
+        `https://arb-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+    ),
 });
 
 const STATEVIEW_ADDRESS = "0x76fd297e2d437cd7f76d50f01afe6160f86e9990";
@@ -930,7 +933,7 @@ async function pancakeGetPrice() {
     return price;
 }
 
-const ARBITRAGE_CONTRACT_ADDR = "0x84DAB8B8d3E991749e4Daa56C70C9F698101b317";
+const ARBITRAGE_CONTRACT_ADDR = "0xEB70684EFf125dBc45238Ff3F5b2530F33585336";
 const ARBITRAGE_CONTRACT_ABI = [
     {
         inputs: [
@@ -960,6 +963,19 @@ const ARBITRAGE_CONTRACT_ABI = [
         inputs: [{ internalType: "address", name: "account", type: "address" }],
         name: "OwnableUnauthorizedAccount",
         type: "error",
+    },
+    {
+        anonymous: false,
+        inputs: [
+            {
+                indexed: false,
+                internalType: "string",
+                name: "message",
+                type: "string",
+            },
+        ],
+        name: "Log",
+        type: "event",
     },
     {
         anonymous: false,
@@ -1146,7 +1162,9 @@ const arbitrageContract = getContract({
 
 const walletClient = createWalletClient({
     chain: arbitrum,
-    transport: http(),
+    transport: http(
+        `https://arb-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`,
+    ),
 });
 
 const POSITION_MANAGER_ADDR = "0xd88f38f930b7952f2db2432cb002e7abbf3dd869";
@@ -1789,23 +1807,27 @@ const positionManager = getContract({
 const poolId = "0x864abca0a6202dba5b8868772308da953ff125b0f95015adbf";
 const poolKey = await positionManager.read.poolKeys([poolId]);
 
+const owner = "0x655815CFaC22597C4339B76A8B7f8f3da6e648cD";
+const uRouter = "0x6ff5693b99212da76ad316178a184ab56d299b43";
+const pRouter = "0x1b81D678ffb9C0263b24A97847620C99d213eB14";
+
 async function doArbitrage(amount, startOnUniswap) {
-    const { request } = await client.simulateContract({
+    return await walletClient.writeContract({
         chain: arbitrum,
         address: ARBITRAGE_CONTRACT_ADDR,
         abi: ARBITRAGE_CONTRACT_ABI,
         functionName: "executeFlashLoan",
         account: privateKeyToAccount(process.env.PRIVATE_KEY),
         args: [amount, USDC_ADDR, WETH_ADDR, startOnUniswap, poolKey],
+        gas: 5000000,
     });
-    return await walletClient.writeContract(request);
 }
 
 while (true) {
     const uniswap_price = await getPoolPrice();
     const pancakeswap_price = await pancakeGetPrice();
 
-    const amount0 = 1000;
+    const amount0 = 100000000;
 
     if (uniswap_price > pancakeswap_price) {
         try {
@@ -1821,4 +1843,5 @@ while (true) {
         }
     }
     console.log({ uniswap_price, pancakeswap_price });
+    await new Promise((r) => setTimeout(r, 60000));
 }
