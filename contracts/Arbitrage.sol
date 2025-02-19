@@ -45,7 +45,6 @@ contract Arbitrage is Ownable {
     event Received(address sender, uint256 amount);
 
     event Log(string logmessage);
-    event Log256(uint256 logmessage);
 
     receive() external payable {
         emit Received(msg.sender, msg.value);
@@ -109,9 +108,11 @@ contract Arbitrage is Ownable {
         path[1] = token1;
 
         approveTokenWithPermit2(token0, uint160(amount), uint48(2147483647), address(uRouter));
-        approveTokenWithPermit2(token0, uint160(amount), uint48(2147483647), address(pRouter));
+        TransferHelper.safeApprove(token0, address(pRouter), amount);
+        // approveTokenWithPermit2(token0, uint160(amount), uint48(2147483647), address(pRouter));
         approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(uRouter));
-        approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(pRouter));
+        TransferHelper.safeApprove(token1, address(pRouter), amount);
+        // approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(pRouter));
 
         if (startOnUniswap) {
             _Uniswap(key, uint160(amount), 0, false, uRouter);
@@ -133,8 +134,6 @@ contract Arbitrage is Ownable {
             _Uniswap(key, uint160(address(this).balance), amount, true, uRouter);
         }
 
-        emit Log256(IERC20(token0).balanceOf(address(this)));
-
         // Repay the loan
         IERC20(token0).transfer(address(balancerVault), amount);
 
@@ -148,7 +147,6 @@ contract Arbitrage is Ownable {
         uint160 _amountIn,
         ISwapRouter router
     ) internal {
-        TransferHelper.safeApprove(token0, address(router), _amountIn);
         ISwapRouter.ExactInputSingleParams memory params =
             ISwapRouter.ExactInputSingleParams({
                 tokenIn: token0,
@@ -161,10 +159,7 @@ contract Arbitrage is Ownable {
                 sqrtPriceLimitX96: 0
             });
 
-        try router.exactInputSingle(params) {
-        } catch {
-            emit Log("failed to swap on pancakeswap");
-        }
+        router.exactInputSingle(params);
     }
 
     function _Uniswap(
@@ -209,10 +204,7 @@ contract Arbitrage is Ownable {
         inputs[0] = abi.encode(actions, params);
 
         // Execute the swap
-        try router.execute(commands, inputs, block.timestamp) {
-        } catch {
-            emit Log("failed to swap on uniswap");
-        }
+        router.execute(commands, inputs, block.timestamp);
 
         // Verify and return the output amount
         amountOut = IERC20(address(uint160(key.currency1.toId()))).balanceOf(address(this));
