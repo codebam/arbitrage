@@ -45,6 +45,7 @@ contract Arbitrage is Ownable {
     event Received(address sender, uint256 amount);
 
     event Log(string logmessage);
+    event Log256(uint256 logmessage);
 
     receive() external payable {
         emit Received(msg.sender, msg.value);
@@ -111,7 +112,7 @@ contract Arbitrage is Ownable {
         TransferHelper.safeApprove(token0, address(pRouter), amount);
         // approveTokenWithPermit2(token0, uint160(amount), uint48(2147483647), address(pRouter));
         approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(uRouter));
-        TransferHelper.safeApprove(token1, address(pRouter), amount);
+        TransferHelper.safeApprove(token1, address(pRouter), type(uint160).max);
         // approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(pRouter));
 
         if (startOnUniswap) {
@@ -121,8 +122,9 @@ contract Arbitrage is Ownable {
             path[1] = token0;
 
             WETH.deposit{value: address(this).balance}();
+            uint256 balance = IERC20(token1).balanceOf(address(this));
 
-            _Pancakeswap(path[0], path[1], uint160(IERC20(token1).balanceOf(address(this))), pRouter);
+            _Pancakeswap(path[0], path[1], uint160(balance), pRouter);
         } else {
             _Pancakeswap(path[0], path[1], uint160(amount), pRouter);
 
@@ -133,6 +135,8 @@ contract Arbitrage is Ownable {
 
             _Uniswap(key, uint160(address(this).balance), amount, true, uRouter);
         }
+
+        emit Log256(IERC20(token0).balanceOf(address(this)));
 
         // Repay the loan
         IERC20(token0).transfer(address(balancerVault), amount);
