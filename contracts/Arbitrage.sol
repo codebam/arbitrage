@@ -14,11 +14,19 @@ import { IPermit2 } from "@uniswap/permit2/src/interfaces/IPermit2.sol";
 import { StateLibrary } from "@uniswap/v4-core/src/libraries/StateLibrary.sol";
 import { PoolKey } from "@uniswap/v4-core/src/types/PoolKey.sol";
 import { Commands } from "@uniswap/universal-router/contracts/libraries/Commands.sol";
+import { IHooks } from "@uniswap/v4-core/src/interfaces/IHooks.sol";
+import { Currency } from "@uniswap/v4-core/src/types/Currency.sol";
 
 import '@uniswap/v3-periphery/contracts/interfaces/ISwapRouter.sol';
 import '@uniswap/v3-periphery/contracts/libraries/TransferHelper.sol';
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+
+interface IWETH {
+    function deposit() external payable;
+    function withdraw(uint256 amount) external;
+    function transfer(address to, uint256 value) external returns (bool);
+}
 
 contract Arbitrage is Ownable {
     using StateLibrary for IPoolManager;
@@ -31,9 +39,13 @@ contract Arbitrage is Ownable {
     ISwapRouter public immutable pRouter;
 
     uint24 public constant poolFee = 100;
+    address constant WETH_ADDRESS = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
+    IWETH constant WETH = IWETH(WETH_ADDRESS);
 
     event Received(address sender, uint256 amount);
-    event Log(string message);
+
+    event Log(string logmessage);
+    event Log256(uint256 logmessage);
 
     receive() external payable {
         emit Received(msg.sender, msg.value);
@@ -73,12 +85,9 @@ contract Arbitrage is Ownable {
         permit2.approve(token, address(_router), amount, expiration);
     }
 
-    function executeFlashLoan(uint256 amount, address token0, address token1, bool startOnUniswap, PoolKey memory key) external {
+    function executeFlashLoan(uint256 amount, address token0, address token1, bool startOnUniswap, PoolKey memory key) external onlyOwner {
         bytes memory userData = abi.encode(amount, token0, token1, startOnUniswap, key);
-        try balancerVault.unlock(abi.encodeWithSelector(this.receiveFlashLoan.selector, userData)) {
-        } catch {
-            emit Log("failed to unlock vault.");
-        }
+        balancerVault.unlock(abi.encodeWithSelector(this.receiveFlashLoan.selector, userData));
     }
 
     function receiveFlashLoan(bytes memory userData) external {
@@ -90,7 +99,7 @@ contract Arbitrage is Ownable {
         // Send some tokens from the vault to this contract (taking a flash loan)
         try balancerVault.sendTo(IERC20(token0), address(this), amount) {
         } catch {
-            emit Log("failed to take flash loan.");
+            emit Log("failed to receive balancer vault tokens");
         }
 
         // Execute any logic with the borrowed funds (e.g., arbitrage, liquidation, etc.)
@@ -99,43 +108,47 @@ contract Arbitrage is Ownable {
         path[0] = token0;
         path[1] = token1;
 
+        approveTokenWithPermit2(token0, uint160(amount), uint48(2147483647), address(uRouter));
+        approveTokenWithPermit2(token0, uint160(amount), uint48(2147483647), address(pRouter));
+        approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(uRouter));
+        approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(pRouter));
+
         if (startOnUniswap) {
-            _Uniswap(key, path, uint160(amount), 0, 3600, uRouter);
+            _Uniswap(key, uint160(amount), 0, false, uRouter);
 
             path[0] = token1;
             path[1] = token0;
 
-            _Pancakeswap(path[0], path[1], uint160(IERC20(token1).balanceOf(address(this))), 3600, pRouter);
+            WETH.deposit{value: address(this).balance}();
+
+            _Pancakeswap(path[0], path[1], uint160(IERC20(token1).balanceOf(address(this))), pRouter);
         } else {
-            _Pancakeswap(path[0], path[1], uint160(amount), 3600, pRouter);
+            _Pancakeswap(path[0], path[1], uint160(amount), pRouter);
 
             path[0] = token1;
             path[1] = token0;
 
-            _Uniswap(key, path, uint160(IERC20(token1).balanceOf(address(this))), amount, 3600, uRouter);
+            WETH.withdraw(IERC20(token1).balanceOf(address(this)));
+
+            _Uniswap(key, uint160(address(this).balance), amount, true, uRouter);
         }
+
+        emit Log256(IERC20(token0).balanceOf(address(this)));
 
         // Repay the loan
-        try IERC20(token0).transfer(address(balancerVault), amount) {
-        } catch {
-            emit Log("failed to repay loan");
-        }
+        IERC20(token0).transfer(address(balancerVault), amount);
 
         // Settle the repayment
-        try balancerVault.settle(IERC20(token0), amount) {
-        } catch {
-            emit Log("failed to settle loan");
-        }
+        balancerVault.settle(IERC20(token0), amount);
     }
 
     function _Pancakeswap(
         address token0,
         address token1,
         uint160 _amountIn,
-        uint48 expiration,
         ISwapRouter router
     ) internal {
-        approveTokenWithPermit2(token0, _amountIn, expiration, address(router));
+        TransferHelper.safeApprove(token0, address(router), _amountIn);
         ISwapRouter.ExactInputSingleParams memory params =
             ISwapRouter.ExactInputSingleParams({
                 tokenIn: token0,
@@ -156,14 +169,11 @@ contract Arbitrage is Ownable {
 
     function _Uniswap(
         PoolKey memory key,
-        address[] memory _path,
         uint160 _amountIn,
         uint256 _amountOut,
-        uint48 expiration,
+        bool zeroForOne,
         UniversalRouter router
     ) internal returns (uint256 amountOut) {
-        approveTokenWithPermit2(_path[0], _amountIn, expiration, address(router));
-
         // Encode the Universal Router command
         bytes memory commands = abi.encodePacked(uint8(Commands.V4_SWAP));
         bytes[] memory inputs = new bytes[](1);
@@ -180,14 +190,20 @@ contract Arbitrage is Ownable {
         params[0] = abi.encode(
             IV4Router.ExactInputSingleParams({
                 poolKey: key,
-                zeroForOne: true,
+                zeroForOne: zeroForOne,
                 amountIn: uint128(_amountIn),
                 amountOutMinimum: uint128(_amountOut),
                 hookData: bytes("")
             })
         );
-        params[1] = abi.encode(key.currency0, _amountIn);
-        params[2] = abi.encode(key.currency1, _amountOut);
+
+        if (zeroForOne) {
+            params[1] = abi.encode(key.currency0, _amountIn);
+            params[2] = abi.encode(key.currency1, _amountOut);
+        } else {
+            params[1] = abi.encode(key.currency1, _amountIn);
+            params[2] = abi.encode(key.currency0, _amountOut);
+        }
 
         // Combine actions and params into inputs
         inputs[0] = abi.encode(actions, params);
