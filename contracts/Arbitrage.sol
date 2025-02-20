@@ -26,6 +26,7 @@ interface IWETH {
     function deposit() external payable;
     function withdraw(uint256 amount) external;
     function transfer(address to, uint256 value) external returns (bool);
+    function balanceOf(address owner) external view returns (uint256);
 }
 
 contract Arbitrage is Ownable {
@@ -38,9 +39,9 @@ contract Arbitrage is Ownable {
     UniversalRouter public immutable uRouter;
     ISwapRouter public immutable pRouter;
 
-    uint24 public constant poolFee = 100;
+    uint24 public constant poolFee = 500;
     address constant WETH_ADDRESS = 0x82aF49447D8a07e3bd95BD0d56f35241523fBab1;
-    IWETH constant WETH = IWETH(WETH_ADDRESS);
+    IWETH WETH = IWETH(WETH_ADDRESS);
 
     event Received(address sender, uint256 amount);
 
@@ -118,18 +119,14 @@ contract Arbitrage is Ownable {
         if (startOnUniswap) {
             _Uniswap(key, uint160(amount), 0, false, uRouter);
 
-            path[0] = token1;
-            path[1] = token0;
+            path[0] = token0;
+            path[1] = token1;
 
             WETH.deposit{value: address(this).balance}();
-            uint256 balance = IERC20(token1).balanceOf(address(this));
 
-            _Pancakeswap(path[0], path[1], uint160(balance), pRouter);
+            _UniswapV3(path[0], path[1], uint160(IERC20(token1).balanceOf(address(this))), pRouter);
         } else {
-            _Pancakeswap(path[0], path[1], uint160(amount), pRouter);
-
-            path[0] = token1;
-            path[1] = token0;
+            _UniswapV3(path[0], path[1], uint160(amount), pRouter);
 
             WETH.withdraw(IERC20(token1).balanceOf(address(this)));
 
@@ -145,16 +142,16 @@ contract Arbitrage is Ownable {
         balancerVault.settle(IERC20(token0), amount);
     }
 
-    function _Pancakeswap(
-        address token0,
-        address token1,
+    function _UniswapV3(
+        address _token0,
+        address _token1,
         uint160 _amountIn,
         ISwapRouter router
     ) internal {
         ISwapRouter.ExactInputSingleParams memory params =
             ISwapRouter.ExactInputSingleParams({
-                tokenIn: token0,
-                tokenOut: token1,
+                tokenIn: _token0,
+                tokenOut: _token1,
                 fee: poolFee,
                 recipient: msg.sender,
                 deadline: block.timestamp,
