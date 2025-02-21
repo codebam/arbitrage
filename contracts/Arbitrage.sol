@@ -104,11 +104,6 @@ contract Arbitrage is Ownable {
         }
 
         // Execute any logic with the borrowed funds (e.g., arbitrage, liquidation, etc.)
-        address[] memory path = new address[](2);
-
-        path[0] = token0;
-        path[1] = token1;
-
         approveTokenWithPermit2(token0, uint160(amount), uint48(2147483647), address(uRouter));
         TransferHelper.safeApprove(token0, address(pRouter), amount);
         // approveTokenWithPermit2(token0, uint160(amount), uint48(2147483647), address(pRouter));
@@ -119,14 +114,11 @@ contract Arbitrage is Ownable {
         if (startOnUniswap) {
             _Uniswap(key, uint160(amount), 0, false, uRouter);
 
-            path[0] = token0;
-            path[1] = token1;
-
             WETH.deposit{value: address(this).balance}();
 
-            _UniswapV3(path[0], path[1], uint160(IERC20(token1).balanceOf(address(this))), pRouter);
+            _UniswapV3(token1, token0, uint160(IERC20(token1).balanceOf(address(this))), pRouter);
         } else {
-            _UniswapV3(path[0], path[1], uint160(amount), pRouter);
+            _UniswapV3(token0, token1, uint160(amount), pRouter);
 
             WETH.withdraw(IERC20(token1).balanceOf(address(this)));
 

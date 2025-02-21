@@ -894,7 +894,7 @@ async function pancakeGetPrice() {
     return price;
 }
 
-const ARBITRAGE_CONTRACT_ADDR = "0xcEe7791667485faa486Bce5a134EDD2DEbc2cbaD";
+const ARBITRAGE_CONTRACT_ADDR = "0x51B24DD4f976bB896aBA0422AcE2081382cd38F8";
 const ARBITRAGE_CONTRACT_ABI = [
     {
         inputs: [
