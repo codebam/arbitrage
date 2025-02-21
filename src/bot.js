@@ -1784,9 +1784,7 @@ async function doArbitrage(amount, startOnUniswap) {
             functionName: "executeFlashLoan",
             account: privateKeyToAccount(process.env.PRIVATE_KEY),
             args: [amount, USDC_ADDR, WETH_ADDR, startOnUniswap, poolKey],
-            gas: 10000000,
-            maxFeePerGas: 23194000,
-            maxPriorityFeePerGas: 23194000,
+            gas: 2000000,
         });
     } catch (e) {
         console.error(e);
@@ -1804,7 +1802,7 @@ while (true) {
     const uniswapv3_price = prices[1];
     console.log({ uniswap_price, uniswapv3_price });
 
-    const amount0 = 40000000;
+    const amount0 = 800000000;
 
     const diff =
         Math.max(uniswap_price, uniswapv3_price) -
@@ -1812,7 +1810,7 @@ while (true) {
     const percent_diff =
         percentageDifference(uniswap_price, uniswapv3_price) * 100;
     console.log({ percent_diff });
-    if (percent_diff < 3) {
+    if (percent_diff < 2.5) {
         times = 0;
         continue;
     }
@@ -1827,5 +1825,5 @@ while (true) {
     } else {
         await doArbitrage(amount0, true);
     }
-    // await new Promise((r) => setTimeout(r, 10000));
+    await new Promise((r) => setTimeout(r, 10000));
 }
