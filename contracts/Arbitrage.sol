@@ -112,7 +112,7 @@ contract Arbitrage is Ownable {
         // approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(pRouter));
 
         if (startOnUniswap) {
-            _Uniswap(key, uint160(amount), 0, false, uRouter);
+            _Uniswap(key, uint160(amount), false, uRouter);
 
             WETH.deposit{value: address(this).balance}();
 
@@ -122,7 +122,7 @@ contract Arbitrage is Ownable {
 
             WETH.withdraw(IERC20(token1).balanceOf(address(this)));
 
-            _Uniswap(key, uint160(address(this).balance), amount, true, uRouter);
+            _Uniswap(key, uint160(address(this).balance), true, uRouter);
         }
 
         emit Log256(IERC20(token0).balanceOf(address(this)));
@@ -145,7 +145,7 @@ contract Arbitrage is Ownable {
                 tokenIn: _token0,
                 tokenOut: _token1,
                 fee: poolFee,
-                recipient: msg.sender,
+                recipient: address(this),
                 deadline: block.timestamp,
                 amountIn: _amountIn,
                 amountOutMinimum: 0,
@@ -158,7 +158,6 @@ contract Arbitrage is Ownable {
     function _Uniswap(
         PoolKey memory key,
         uint160 _amountIn,
-        uint256 _amountOut,
         bool zeroForOne,
         UniversalRouter router
     ) internal returns (uint256 amountOut) {
@@ -180,17 +179,17 @@ contract Arbitrage is Ownable {
                 poolKey: key,
                 zeroForOne: zeroForOne,
                 amountIn: uint128(_amountIn),
-                amountOutMinimum: uint128(_amountOut),
+                amountOutMinimum: uint128(0),
                 hookData: bytes("")
             })
         );
 
         if (zeroForOne) {
             params[1] = abi.encode(key.currency0, _amountIn);
-            params[2] = abi.encode(key.currency1, _amountOut);
+            params[2] = abi.encode(key.currency1, uint128(0));
         } else {
             params[1] = abi.encode(key.currency1, _amountIn);
-            params[2] = abi.encode(key.currency0, _amountOut);
+            params[2] = abi.encode(key.currency0, uint128(0));
         }
 
         // Combine actions and params into inputs
@@ -201,7 +200,6 @@ contract Arbitrage is Ownable {
 
         // Verify and return the output amount
         amountOut = IERC20(address(uint160(key.currency1.toId()))).balanceOf(address(this));
-        require(amountOut >= _amountOut, "Insufficient output amount");
         return amountOut;
     }
 }
