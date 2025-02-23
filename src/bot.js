@@ -7,7 +7,7 @@ import {
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { arbitrum } from "viem/chains";
-import { ethers } from "ethers";
+import { EventEmitter } from "events";
 
 const client = createPublicClient({
   chain: arbitrum,
@@ -1795,38 +1795,44 @@ function percentageDifference(price1, price2) {
   return (Math.abs(price1 - price2) / Math.min(price1, price2)) * 100;
 }
 
+const eventBus = new EventEmitter();
 let times = 0;
-while (true) {
-  const prices = await Promise.all([getPoolPrice(), pancakeGetPrice()]);
-  const uniswap_price = prices[0];
-  const uniswapv3_price = prices[1];
+const amount0 = 3000000000;
+
+async function startPriceFeed() {
+  setInterval(async () => {
+    const uniswap_price = await getPoolPrice();
+    const uniswapv3_price = await pancakeGetPrice();
+    eventBus.emit("priceUpdate", { uniswap_price, uniswapv3_price });
+  }, 500);
+}
+
+// Listen for price updates
+eventBus.on("priceUpdate", async ({ uniswap_price, uniswapv3_price }) => {
   console.log({ uniswap_price, uniswapv3_price });
 
-  const amount0 = 3000000000;
-
-  const diff =
-    Math.max(uniswap_price, uniswapv3_price) -
-    Math.min(uniswap_price, uniswapv3_price);
   const percent_diff =
     percentageDifference(uniswap_price, uniswapv3_price) * 100;
   console.log({ percent_diff });
+
   if (percent_diff < 4.71) {
     times = 0;
-    continue;
+    return;
   }
 
   times = times + 1;
   if (times < 25) {
-    continue;
+    return;
   }
 
   if (uniswap_price > uniswapv3_price) {
     await doArbitrage(amount0, false);
-    // await new Promise((r) => setTimeout(r, 10000));
     times = -25;
   } else {
     await doArbitrage(amount0, true);
-    // await new Promise((r) => setTimeout(r, 10000));
     times = -25;
   }
-}
+});
+
+// Start fetching prices
+startPriceFeed();
