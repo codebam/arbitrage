@@ -894,7 +894,7 @@ async function pancakeGetPrice() {
   return price;
 }
 
-const ARBITRAGE_CONTRACT_ADDR = "0x45159920E78c8E9b483191B6D70c25560017ABC7";
+const ARBITRAGE_CONTRACT_ADDR = "0x3031E0682622aC89FCDcc231226f7346F9F655a6";
 const ARBITRAGE_CONTRACT_ABI = [
   {
     inputs: [
@@ -1802,7 +1802,7 @@ while (true) {
   const uniswapv3_price = prices[1];
   console.log({ uniswap_price, uniswapv3_price });
 
-  const amount0 = 80000000;
+  const amount0 = 3000000000;
 
   const diff =
     Math.max(uniswap_price, uniswapv3_price) -
@@ -1810,20 +1810,23 @@ while (true) {
   const percent_diff =
     percentageDifference(uniswap_price, uniswapv3_price) * 100;
   console.log({ percent_diff });
-  if (percent_diff < 6) {
+  if (percent_diff < 4.71) {
     times = 0;
     continue;
   }
 
   times = times + 1;
-  if (times < 10) {
+  if (times < 25) {
     continue;
   }
 
   if (uniswap_price > uniswapv3_price) {
     await doArbitrage(amount0, false);
+    // await new Promise((r) => setTimeout(r, 10000));
+    times = -25;
   } else {
     await doArbitrage(amount0, true);
+    // await new Promise((r) => setTimeout(r, 10000));
+    times = -25;
   }
-  await new Promise((r) => setTimeout(r, 10000));
 }

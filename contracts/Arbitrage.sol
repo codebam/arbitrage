@@ -104,28 +104,22 @@ contract Arbitrage is Ownable {
         }
 
         // Execute any logic with the borrowed funds (e.g., arbitrage, liquidation, etc.)
-        approveTokenWithPermit2(token0, uint160(amount), uint48(2147483647), address(uRouter));
-        TransferHelper.safeApprove(token0, address(pRouter), amount);
-        // approveTokenWithPermit2(token0, uint160(amount), uint48(2147483647), address(pRouter));
+        approveTokenWithPermit2(token0, type(uint160).max, uint48(2147483647), address(uRouter));
+        TransferHelper.safeApprove(token0, address(pRouter), type(uint160).max);
         approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(uRouter));
         TransferHelper.safeApprove(token1, address(pRouter), type(uint160).max);
-        // approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(pRouter));
 
         if (startOnUniswap) {
             _Uniswap(key, uint160(amount), false, uRouter);
-
             WETH.deposit{value: address(this).balance}();
-
+            TransferHelper.safeApprove(token1, address(pRouter), type(uint160).max);
             _UniswapV3(token1, token0, uint160(IERC20(token1).balanceOf(address(this))), pRouter);
         } else {
             _UniswapV3(token0, token1, uint160(amount), pRouter);
-
+            TransferHelper.safeApprove(token0, address(this), type(uint160).max);
             WETH.withdraw(IERC20(token1).balanceOf(address(this)));
-
             _Uniswap(key, uint160(address(this).balance), true, uRouter);
         }
-
-        emit Log256(IERC20(token0).balanceOf(address(this)));
 
         // Repay the loan
         IERC20(token0).transfer(address(balancerVault), amount);
