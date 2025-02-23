@@ -1821,16 +1821,16 @@ eventBus.on("priceUpdate", async ({ uniswap_price, uniswapv3_price }) => {
   }
 
   times = times + 1;
-  if (times < 25) {
+  if (times < 5) {
     return;
   }
 
   if (uniswap_price > uniswapv3_price) {
     await doArbitrage(amount0, false);
-    times = -25;
+    times = 0;
   } else {
     await doArbitrage(amount0, true);
-    times = -25;
+    times = 0;
   }
 });
 
