@@ -1799,12 +1799,26 @@ const eventBus = new EventEmitter();
 let times = 0;
 const amount0 = 3000000000;
 
+// Store last known prices to prevent duplicate updates
+let lastUniswapPrice;
+let lastUniswapV3Price;
+
+// Simulate price update events
 async function startPriceFeed() {
   setInterval(async () => {
     const uniswap_price = await getPoolPrice();
     const uniswapv3_price = await pancakeGetPrice();
-    eventBus.emit("priceUpdate", { uniswap_price, uniswapv3_price });
-  }, 500);
+
+    // Emit event only if prices have changed
+    if (
+      uniswap_price !== lastUniswapPrice ||
+      uniswapv3_price !== lastUniswapV3Price
+    ) {
+      lastUniswapPrice = uniswap_price;
+      lastUniswapV3Price = uniswapv3_price;
+      eventBus.emit("priceUpdate", { uniswap_price, uniswapv3_price });
+    }
+  }, 200); // Fetch prices every 0.2 seconds
 }
 
 // Listen for price updates
@@ -1821,7 +1835,7 @@ eventBus.on("priceUpdate", async ({ uniswap_price, uniswapv3_price }) => {
   }
 
   times = times + 1;
-  if (times < 5) {
+  if (times < 3) {
     return;
   }
 
