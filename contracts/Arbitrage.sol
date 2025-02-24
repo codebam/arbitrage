@@ -109,16 +109,34 @@ contract Arbitrage is Ownable {
         approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(uRouter));
         TransferHelper.safeApprove(token1, address(pRouter), type(uint160).max);
 
+        bool isWethToken0 = token0 == address(WETH);
+
         if (startOnUniswap) {
-            _Uniswap(key, uint160(amount), false, uRouter);
-            WETH.deposit{value: address(this).balance}();
-            TransferHelper.safeApprove(token1, address(pRouter), type(uint160).max);
-            _UniswapV3(token1, token0, uint160(IERC20(token1).balanceOf(address(this))), pRouter);
+            if (isWethToken0) {
+                // WETH → USDC (start with Uniswap, end with PancakeSwap)
+                _UniswapV3(token0, token1, uint160(amount), pRouter);
+                approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(uRouter));
+                _Uniswap(key, uint160(IERC20(token1).balanceOf(address(this))), false, uRouter);
+            } else {
+                // USDC → WETH (start with Uniswap, end with PancakeSwap)
+                _UniswapV3(token0, token1, uint160(amount), pRouter);
+                WETH.deposit{value: address(this).balance}();
+                approveTokenWithPermit2(token1, type(uint160).max, uint48(2147483647), address(uRouter));
+                _Uniswap(key, uint160(address(this).balance), true, uRouter);
+            }
         } else {
-            _UniswapV3(token0, token1, uint160(amount), pRouter);
-            TransferHelper.safeApprove(token0, address(this), type(uint160).max);
-            WETH.withdraw(IERC20(token1).balanceOf(address(this)));
-            _Uniswap(key, uint160(address(this).balance), true, uRouter);
+            if (isWethToken0) {
+                // WETH → USDC (start with PancakeSwap, end with Uniswap)
+                _Uniswap(key, uint160(amount), false, uRouter);
+                TransferHelper.safeApprove(token1, address(pRouter), type(uint160).max);
+                _UniswapV3(token1, token0, uint160(IERC20(token1).balanceOf(address(this))), pRouter);
+            } else {
+                // USDC → WETH (start with PancakeSwap, end with Uniswap)
+                _Uniswap(key, uint160(amount), false, uRouter);
+                WETH.deposit{value: address(this).balance}();
+                TransferHelper.safeApprove(token1, address(pRouter), type(uint160).max);
+                _UniswapV3(token1, token0, uint160(IERC20(token1).balanceOf(address(this))), pRouter);
+            }
         }
 
         // Repay the loan
