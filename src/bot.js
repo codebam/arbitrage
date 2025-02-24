@@ -232,10 +232,14 @@ const POOL_ID =
 
 // Call this to get the ETH price on Uniswap
 async function getPoolPrice() {
-  const [sqrtPriceX96, tick, protocolFee, lpFee] =
-    await stateView.read.getSlot0([POOL_ID]);
-  const price = (Number(sqrtPriceX96) ** 2 / 2 ** 192) * 10 ** 12;
-  return price;
+  try {
+    const [sqrtPriceX96, tick, protocolFee, lpFee] =
+      await stateView.read.getSlot0([POOL_ID]);
+    const price = (Number(sqrtPriceX96) ** 2 / 2 ** 192) * 10 ** 12;
+    return price;
+  } catch (e) {
+    console.error(e);
+  }
 }
 
 const PANCAKE_POOL_ADDR = "0xC6962004f452bE9203591991D15f6b388e09E8D0";
@@ -889,9 +893,13 @@ const poolContract = getContract({
 
 // Call this to get the ETH price on Pancakeswap
 async function pancakeGetPrice() {
-  const [sqrtPriceX96] = await poolContract.read.slot0();
-  const price = (Number(sqrtPriceX96) ** 2 / 2 ** 192) * 10 ** 12;
-  return price;
+  try {
+    const [sqrtPriceX96] = await poolContract.read.slot0();
+    const price = (Number(sqrtPriceX96) ** 2 / 2 ** 192) * 10 ** 12;
+    return price;
+  } catch (e) {
+    console.log(e);
+  }
 }
 
 const ARBITRAGE_CONTRACT_ADDR = "0x3031E0682622aC89FCDcc231226f7346F9F655a6";
@@ -1775,6 +1783,484 @@ const owner = "0x655815CFaC22597C4339B76A8B7f8f3da6e648cD";
 const uRouter = "0x6ff5693b99212da76ad316178a184ab56d299b43";
 const pRouter = "0x1b81D678ffb9C0263b24A97847620C99d213eB14";
 
+const v4_quoter = "0x3972c00f7ed4885e145823eb7c655375d275a1c5";
+const v4_quoter_abi = [
+  {
+    inputs: [
+      {
+        internalType: "contract IPoolManager",
+        name: "_poolManager",
+        type: "address",
+      },
+    ],
+    stateMutability: "nonpayable",
+    type: "constructor",
+  },
+  {
+    inputs: [{ internalType: "PoolId", name: "poolId", type: "bytes32" }],
+    name: "NotEnoughLiquidity",
+    type: "error",
+  },
+  { inputs: [], name: "NotPoolManager", type: "error" },
+  { inputs: [], name: "NotSelf", type: "error" },
+  {
+    inputs: [{ internalType: "uint256", name: "amount", type: "uint256" }],
+    name: "QuoteSwap",
+    type: "error",
+  },
+  { inputs: [], name: "UnexpectedCallSuccess", type: "error" },
+  {
+    inputs: [{ internalType: "bytes", name: "revertData", type: "bytes" }],
+    name: "UnexpectedRevertBytes",
+    type: "error",
+  },
+  {
+    inputs: [
+      {
+        components: [
+          { internalType: "Currency", name: "exactCurrency", type: "address" },
+          {
+            components: [
+              {
+                internalType: "Currency",
+                name: "intermediateCurrency",
+                type: "address",
+              },
+              { internalType: "uint24", name: "fee", type: "uint24" },
+              { internalType: "int24", name: "tickSpacing", type: "int24" },
+              {
+                internalType: "contract IHooks",
+                name: "hooks",
+                type: "address",
+              },
+              { internalType: "bytes", name: "hookData", type: "bytes" },
+            ],
+            internalType: "struct PathKey[]",
+            name: "path",
+            type: "tuple[]",
+          },
+          { internalType: "uint128", name: "exactAmount", type: "uint128" },
+        ],
+        internalType: "struct IV4Quoter.QuoteExactParams",
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "_quoteExactInput",
+    outputs: [{ internalType: "bytes", name: "", type: "bytes" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        components: [
+          {
+            components: [
+              { internalType: "Currency", name: "currency0", type: "address" },
+              { internalType: "Currency", name: "currency1", type: "address" },
+              { internalType: "uint24", name: "fee", type: "uint24" },
+              { internalType: "int24", name: "tickSpacing", type: "int24" },
+              {
+                internalType: "contract IHooks",
+                name: "hooks",
+                type: "address",
+              },
+            ],
+            internalType: "struct PoolKey",
+            name: "poolKey",
+            type: "tuple",
+          },
+          { internalType: "bool", name: "zeroForOne", type: "bool" },
+          { internalType: "uint128", name: "exactAmount", type: "uint128" },
+          { internalType: "bytes", name: "hookData", type: "bytes" },
+        ],
+        internalType: "struct IV4Quoter.QuoteExactSingleParams",
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "_quoteExactInputSingle",
+    outputs: [{ internalType: "bytes", name: "", type: "bytes" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        components: [
+          { internalType: "Currency", name: "exactCurrency", type: "address" },
+          {
+            components: [
+              {
+                internalType: "Currency",
+                name: "intermediateCurrency",
+                type: "address",
+              },
+              { internalType: "uint24", name: "fee", type: "uint24" },
+              { internalType: "int24", name: "tickSpacing", type: "int24" },
+              {
+                internalType: "contract IHooks",
+                name: "hooks",
+                type: "address",
+              },
+              { internalType: "bytes", name: "hookData", type: "bytes" },
+            ],
+            internalType: "struct PathKey[]",
+            name: "path",
+            type: "tuple[]",
+          },
+          { internalType: "uint128", name: "exactAmount", type: "uint128" },
+        ],
+        internalType: "struct IV4Quoter.QuoteExactParams",
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "_quoteExactOutput",
+    outputs: [{ internalType: "bytes", name: "", type: "bytes" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        components: [
+          {
+            components: [
+              { internalType: "Currency", name: "currency0", type: "address" },
+              { internalType: "Currency", name: "currency1", type: "address" },
+              { internalType: "uint24", name: "fee", type: "uint24" },
+              { internalType: "int24", name: "tickSpacing", type: "int24" },
+              {
+                internalType: "contract IHooks",
+                name: "hooks",
+                type: "address",
+              },
+            ],
+            internalType: "struct PoolKey",
+            name: "poolKey",
+            type: "tuple",
+          },
+          { internalType: "bool", name: "zeroForOne", type: "bool" },
+          { internalType: "uint128", name: "exactAmount", type: "uint128" },
+          { internalType: "bytes", name: "hookData", type: "bytes" },
+        ],
+        internalType: "struct IV4Quoter.QuoteExactSingleParams",
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "_quoteExactOutputSingle",
+    outputs: [{ internalType: "bytes", name: "", type: "bytes" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "poolManager",
+    outputs: [
+      { internalType: "contract IPoolManager", name: "", type: "address" },
+    ],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        components: [
+          { internalType: "Currency", name: "exactCurrency", type: "address" },
+          {
+            components: [
+              {
+                internalType: "Currency",
+                name: "intermediateCurrency",
+                type: "address",
+              },
+              { internalType: "uint24", name: "fee", type: "uint24" },
+              { internalType: "int24", name: "tickSpacing", type: "int24" },
+              {
+                internalType: "contract IHooks",
+                name: "hooks",
+                type: "address",
+              },
+              { internalType: "bytes", name: "hookData", type: "bytes" },
+            ],
+            internalType: "struct PathKey[]",
+            name: "path",
+            type: "tuple[]",
+          },
+          { internalType: "uint128", name: "exactAmount", type: "uint128" },
+        ],
+        internalType: "struct IV4Quoter.QuoteExactParams",
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "quoteExactInput",
+    outputs: [
+      { internalType: "uint256", name: "amountOut", type: "uint256" },
+      { internalType: "uint256", name: "gasEstimate", type: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        components: [
+          {
+            components: [
+              { internalType: "Currency", name: "currency0", type: "address" },
+              { internalType: "Currency", name: "currency1", type: "address" },
+              { internalType: "uint24", name: "fee", type: "uint24" },
+              { internalType: "int24", name: "tickSpacing", type: "int24" },
+              {
+                internalType: "contract IHooks",
+                name: "hooks",
+                type: "address",
+              },
+            ],
+            internalType: "struct PoolKey",
+            name: "poolKey",
+            type: "tuple",
+          },
+          { internalType: "bool", name: "zeroForOne", type: "bool" },
+          { internalType: "uint128", name: "exactAmount", type: "uint128" },
+          { internalType: "bytes", name: "hookData", type: "bytes" },
+        ],
+        internalType: "struct IV4Quoter.QuoteExactSingleParams",
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "quoteExactInputSingle",
+    outputs: [
+      { internalType: "uint256", name: "amountOut", type: "uint256" },
+      { internalType: "uint256", name: "gasEstimate", type: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        components: [
+          { internalType: "Currency", name: "exactCurrency", type: "address" },
+          {
+            components: [
+              {
+                internalType: "Currency",
+                name: "intermediateCurrency",
+                type: "address",
+              },
+              { internalType: "uint24", name: "fee", type: "uint24" },
+              { internalType: "int24", name: "tickSpacing", type: "int24" },
+              {
+                internalType: "contract IHooks",
+                name: "hooks",
+                type: "address",
+              },
+              { internalType: "bytes", name: "hookData", type: "bytes" },
+            ],
+            internalType: "struct PathKey[]",
+            name: "path",
+            type: "tuple[]",
+          },
+          { internalType: "uint128", name: "exactAmount", type: "uint128" },
+        ],
+        internalType: "struct IV4Quoter.QuoteExactParams",
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "quoteExactOutput",
+    outputs: [
+      { internalType: "uint256", name: "amountIn", type: "uint256" },
+      { internalType: "uint256", name: "gasEstimate", type: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      {
+        components: [
+          {
+            components: [
+              { internalType: "Currency", name: "currency0", type: "address" },
+              { internalType: "Currency", name: "currency1", type: "address" },
+              { internalType: "uint24", name: "fee", type: "uint24" },
+              { internalType: "int24", name: "tickSpacing", type: "int24" },
+              {
+                internalType: "contract IHooks",
+                name: "hooks",
+                type: "address",
+              },
+            ],
+            internalType: "struct PoolKey",
+            name: "poolKey",
+            type: "tuple",
+          },
+          { internalType: "bool", name: "zeroForOne", type: "bool" },
+          { internalType: "uint128", name: "exactAmount", type: "uint128" },
+          { internalType: "bytes", name: "hookData", type: "bytes" },
+        ],
+        internalType: "struct IV4Quoter.QuoteExactSingleParams",
+        name: "params",
+        type: "tuple",
+      },
+    ],
+    name: "quoteExactOutputSingle",
+    outputs: [
+      { internalType: "uint256", name: "amountIn", type: "uint256" },
+      { internalType: "uint256", name: "gasEstimate", type: "uint256" },
+    ],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [{ internalType: "bytes", name: "data", type: "bytes" }],
+    name: "unlockCallback",
+    outputs: [{ internalType: "bytes", name: "", type: "bytes" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+];
+
+async function quoteExactInputSingle(
+  poolKey,
+  zeroForOne,
+  exactAmount,
+  hookData,
+) {
+  const result = await client.readContract({
+    address: v4_quoter,
+    abi: v4_quoter_abi,
+    functionName: "quoteExactInputSingle",
+    args: [{ poolKey, zeroForOne, exactAmount, hookData }],
+  });
+  return result[0];
+}
+
+const v3_quoter = "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6";
+const v3_quoter_abi = [
+  {
+    inputs: [
+      { internalType: "address", name: "_factory", type: "address" },
+      { internalType: "address", name: "_WETH9", type: "address" },
+    ],
+    stateMutability: "nonpayable",
+    type: "constructor",
+  },
+  {
+    inputs: [],
+    name: "WETH9",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [],
+    name: "factory",
+    outputs: [{ internalType: "address", name: "", type: "address" }],
+    stateMutability: "view",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "bytes", name: "path", type: "bytes" },
+      { internalType: "uint256", name: "amountIn", type: "uint256" },
+    ],
+    name: "quoteExactInput",
+    outputs: [{ internalType: "uint256", name: "amountOut", type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "tokenIn", type: "address" },
+      { internalType: "address", name: "tokenOut", type: "address" },
+      { internalType: "uint24", name: "fee", type: "uint24" },
+      { internalType: "uint256", name: "amountIn", type: "uint256" },
+      { internalType: "uint160", name: "sqrtPriceLimitX96", type: "uint160" },
+    ],
+    name: "quoteExactInputSingle",
+    outputs: [{ internalType: "uint256", name: "amountOut", type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "bytes", name: "path", type: "bytes" },
+      { internalType: "uint256", name: "amountOut", type: "uint256" },
+    ],
+    name: "quoteExactOutput",
+    outputs: [{ internalType: "uint256", name: "amountIn", type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "address", name: "tokenIn", type: "address" },
+      { internalType: "address", name: "tokenOut", type: "address" },
+      { internalType: "uint24", name: "fee", type: "uint24" },
+      { internalType: "uint256", name: "amountOut", type: "uint256" },
+      { internalType: "uint160", name: "sqrtPriceLimitX96", type: "uint160" },
+    ],
+    name: "quoteExactOutputSingle",
+    outputs: [{ internalType: "uint256", name: "amountIn", type: "uint256" }],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    inputs: [
+      { internalType: "int256", name: "amount0Delta", type: "int256" },
+      { internalType: "int256", name: "amount1Delta", type: "int256" },
+      { internalType: "bytes", name: "path", type: "bytes" },
+    ],
+    name: "uniswapV3SwapCallback",
+    outputs: [],
+    stateMutability: "view",
+    type: "function",
+  },
+];
+
+async function quoteExactInputSingleV3(
+  tokenIn,
+  tokenOut,
+  fee,
+  amountIn,
+  sqrtPriceLimitX96,
+) {
+  const result = await client.readContract({
+    address: v3_quoter,
+    abi: v3_quoter_abi,
+    functionName: "quoteExactInputSingle",
+    args: [tokenIn, tokenOut, fee, amountIn, sqrtPriceLimitX96],
+  });
+  return result;
+}
+
+async function simulateArbitrage(amount, startOnUniswap) {
+  if (startOnUniswap) {
+    return await quoteExactInputSingleV3(
+      WETH_ADDR,
+      USDC_ADDR,
+      500,
+      await quoteExactInputSingle(poolKey, false, amount, "0x"),
+      0,
+    );
+  } else {
+    return await quoteExactInputSingle(
+      poolKey,
+      true,
+      quoteExactInputSingleV3(USDC_ADDR, WETH_ADDR, 500, amount, 0),
+      "0x",
+    );
+  }
+}
+
 async function doArbitrage(amount, startOnUniswap) {
   try {
     return await walletClient.writeContract({
@@ -1798,35 +2284,56 @@ function percentageDifference(price1, price2) {
 const eventBus = new EventEmitter();
 let times = 0;
 const amount0 = 3000000000;
+const increment = 1000000000;
 
-// Store last known prices to prevent duplicate updates
-let lastUniswapPrice;
-let lastUniswapV3Price;
+// Store current prices
+let currentUniswapPrice;
+let currentUniswapV3Price;
 
-// Simulate price update events
-async function startPriceFeed() {
+// Start Uniswap price feed
+async function startUniswapPriceFeed() {
   setInterval(async () => {
     const uniswap_price = await getPoolPrice();
-    const uniswapv3_price = await pancakeGetPrice();
 
-    // Emit event only if prices have changed
-    if (
-      uniswap_price !== lastUniswapPrice ||
-      uniswapv3_price !== lastUniswapV3Price
-    ) {
-      lastUniswapPrice = uniswap_price;
-      lastUniswapV3Price = uniswapv3_price;
-      eventBus.emit("priceUpdate", { uniswap_price, uniswapv3_price });
+    if (uniswap_price !== currentUniswapPrice) {
+      currentUniswapPrice = uniswap_price;
+      eventBus.emit("uniswapPriceUpdate", uniswap_price);
     }
-  }, 200); // Fetch prices every 0.2 seconds
+  }, 100);
 }
 
-// Listen for price updates
-eventBus.on("priceUpdate", async ({ uniswap_price, uniswapv3_price }) => {
-  console.log({ uniswap_price, uniswapv3_price });
+// Start Uniswap V3 price feed
+async function startUniswapV3PriceFeed() {
+  setInterval(async () => {
+    const uniswapv3_price = await pancakeGetPrice();
+
+    if (uniswapv3_price !== currentUniswapV3Price) {
+      currentUniswapV3Price = uniswapv3_price;
+      eventBus.emit("uniswapV3PriceUpdate", uniswapv3_price);
+    }
+  }, 100);
+}
+
+// Listen for Uniswap price updates
+eventBus.on("uniswapPriceUpdate", (uniswap_price) => {
+  console.log({ uniswap_price });
+  checkArbitrage();
+});
+
+// Listen for Uniswap V3 price updates
+eventBus.on("uniswapV3PriceUpdate", (uniswapv3_price) => {
+  console.log({ uniswapv3_price });
+  checkArbitrage();
+});
+
+// Check arbitrage opportunity when prices change
+async function checkArbitrage() {
+  if (currentUniswapPrice === null || currentUniswapV3Price === null) {
+    return;
+  }
 
   const percent_diff =
-    percentageDifference(uniswap_price, uniswapv3_price) * 100;
+    percentageDifference(currentUniswapPrice, currentUniswapV3Price) * 100;
   console.log({ percent_diff });
 
   if (percent_diff < 4.71) {
@@ -1834,19 +2341,36 @@ eventBus.on("priceUpdate", async ({ uniswap_price, uniswapv3_price }) => {
     return;
   }
 
-  times = times + 1;
-  if (times < 3) {
+  times += 1;
+  if (times < 2) {
     return;
   }
 
-  if (uniswap_price > uniswapv3_price) {
-    await doArbitrage(amount0, false);
-    times = 0;
+  if (currentUniswapPrice > currentUniswapV3Price) {
+    if (simulateArbitrage(amount0, false) > amount0) {
+      await doArbitrage(amount0, false);
+    }
+    if (simulateArbitrage(amount0 + increment, false) > amount0) {
+      await doArbitrage(amount0 + increment, false);
+    }
+    if (simulateArbitrage(amount0 - increment, false) > amount0) {
+      await doArbitrage(amount0 - increment, false);
+    }
   } else {
-    await doArbitrage(amount0, true);
-    times = 0;
+    if (simulateArbitrage(amount0, true) > amount0) {
+      await doArbitrage(amount0, true);
+    }
+    if (simulateArbitrage(amount0 + increment, true) > amount0) {
+      await doArbitrage(amount0 + increment, true);
+    }
+    if (simulateArbitrage(amount0 - increment, true) > amount0) {
+      await doArbitrage(amount0 - increment, true);
+    }
   }
-});
 
-// Start fetching prices
-startPriceFeed();
+  times = 0;
+}
+
+// Start both price feeds
+startUniswapPriceFeed();
+startUniswapV3PriceFeed();
