@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "esnext",                // Target the latest ECMAScript version
+    "module": "esnext",                // Use ES modules
+    "moduleResolution": "node",        // Use Node.js-style module resolution
+    "strict": true,                    // Enable all strict type-checking options
+    "esModuleInterop": true,           // Enable compatibility with CommonJS modules
+    "skipLibCheck": true,             // Skip type checking of declaration files
+    "forceConsistentCasingInFileNames": true, // Ensure consistent casing in file names
+    "outDir": "./dist",                // Output directory for compiled files
+    "rootDir": "./src",                // Only compile files inside the `src` directory
+    "allowJs": false,                  // Disallow JavaScript files
+    "checkJs": false,                  // Disable type-checking for JavaScript files
+    "resolveJsonModule": true,         // Allow importing JSON files
+    "isolatedModules": true            // Ensure each file can be safely transpiled independently
+  },
+  "include": ["src/**/*.ts"],          // Only include TypeScript files in the `src` directory
+  "exclude": ["node_modules", "dist"]  // Exclude `node_modules` and `dist` directories
+}

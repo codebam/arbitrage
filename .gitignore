@@ -5,11 +5,12 @@ coverage.json
 typechain
 typechain-types
 output.txt
-
-#Hardhat files
-cache
-artifacts
+out/
+cache/
 
 # nixos direnv
 .envrc
 .direnv/
+
+# typescript
+dist/
