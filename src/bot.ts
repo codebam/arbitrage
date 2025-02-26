@@ -17,7 +17,7 @@ import {
   POSITION_MANAGER_ABI,
   V4_QUOTER_ABI,
   V3_QUOTER_ABI,
-  VAULT_ABI,
+  V4_POOL_MANAGER_ABI,
 } from "./abi.js";
 
 // Define types for the environment variables
@@ -46,6 +46,8 @@ const ARBITRAGE_CONTRACT_ADDR: `0x${string}` =
 const POSITION_MANAGER_ADDR: `0x${string}` =
   "0xd88f38f930b7952f2db2432cb002e7abbf3dd869";
 const V4_QUOTER: `0x${string}` = "0x3972c00f7ed4885e145823eb7c655375d275a1c5";
+const V4_POOL_MANAGER: `0x${string}` =
+  "0x360e68faccca8ca495c1b759fd9eee466db9fb32";
 const V3_QUOTER: `0x${string}` = "0xb27308f9F90D607463bb33eA1BeBb41C27CE5AB6";
 
 // Define token addresses
@@ -68,6 +70,12 @@ const poolContract = getContract({
 const positionManager = getContract({
   address: POSITION_MANAGER_ADDR,
   abi: POSITION_MANAGER_ABI,
+  client,
+});
+
+const poolManager = getContract({
+  address: V4_POOL_MANAGER,
+  abi: V4_POOL_MANAGER_ABI,
   client,
 });
 
@@ -108,6 +116,37 @@ async function v3GetPrice(): Promise<number | undefined> {
   } catch (e) {
     console.log(e);
   }
+}
+
+async function v3GetReserves(): Promise<{
+  ethReserve: number;
+  usdcReserve: number;
+}> {
+  const [sqrtPriceX96, , , , , ,] =
+    (await poolContract.read.slot0()) as bigint[];
+  const liquidity = (await poolContract.read.liquidity()) as bigint;
+
+  // Compute token reserves (Uniswap V3 does not store reserves directly)
+  const reserve0 = (liquidity * BigInt(2 ** 96)) / sqrtPriceX96;
+  const reserve1 = (liquidity * sqrtPriceX96) / BigInt(2 ** 96);
+
+  return { ethReserve: Number(reserve0), usdcReserve: Number(reserve1) };
+}
+
+function calculateBestPurchasePrice(
+  poolAReserves: { ethReserve: number; usdcReserve: number }, // Reserves for Pool A
+  poolBReserves: { ethReserve: number; usdcReserve: number }, // Reserves for Pool B
+): number {
+  // Calculate the price of ETH in terms of USDC for Pool A
+  const priceA = poolAReserves.usdcReserve / poolAReserves.ethReserve;
+
+  // Calculate the price of ETH in terms of USDC for Pool B
+  const priceB = poolBReserves.usdcReserve / poolBReserves.ethReserve;
+
+  // Determine the best purchase price (minimum price)
+  const bestPurchasePrice = Math.min(priceA, priceB);
+
+  return bestPurchasePrice;
 }
 
 // Function to quote exact input single on V4
@@ -245,6 +284,15 @@ async function checkArbitrage(): Promise<void> {
   if (currentUniswapPrice === null || currentUniswapV3Price === null) {
     return;
   }
+
+  const v3_reserves = await v3GetReserves();
+  const v4_reserves = {
+    ethReserve: 902.95,
+    usdcReserve: 816300,
+  };
+  const amount1 = BigInt(
+    Math.floor(calculateBestPurchasePrice(v3_reserves, v4_reserves)),
+  );
 
   const percent_diff: number =
     percentageDifference(currentUniswapPrice, currentUniswapV3Price) * 100;
